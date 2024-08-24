@@ -45,6 +45,10 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
+/* -- WAITING -- */
+static struct list sleep_list;
+
+
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
@@ -109,6 +113,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	list_init(&sleep_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -419,8 +424,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 static struct thread *
 next_thread_to_run (void) {
 	if (list_empty (&ready_list))
-		return idle_thread;
-	else
+		return idle_thread; 
 		return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
@@ -587,4 +591,28 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+/* Waiting */
+static bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
+	const struct thread *a = list_entry (a_, struct thread, elem);
+	const struct thread *b = list_entry (b_, struct thread, elem);
+	return a->sleep_time < b->sleep_time;
+};
+
+void thread_sleep(int64_t sleep_time) { // sleep_time = current_time + ticks
+	enum intr_level old_level;
+	old_level = intr_disable();	
+	struct thread *t = thread_current();
+	t->sleep_time = sleep_time;
+	list_insert_ordered(&sleep_list, &(t->elem), timer_less_func, NULL);
+	thread_block();
+	intr_set_level(old_level);
+}
+
+void thread_awake(int64_t current_time) {
+	while (!list_empty(&sleep_list) && list_entry(list_front(&sleep_list), struct thread, elem)->sleep_time < current_time) {
+		struct thread *awaken = list_entry(list_pop_front(&sleep_list), struct thread, elem);
+		thread_unblock(awaken);
+	}
 }
