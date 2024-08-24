@@ -29,6 +29,9 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
+/* WAIT */
+static struct semaphore wait_sema;
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -43,6 +46,7 @@ timer_init (void) {
 	outb (0x40, count >> 8);
 
 	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+	sema_init(&wait_sema, 0);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -88,13 +92,23 @@ timer_elapsed (int64_t then) {
 }
 
 /* Suspends execution for approximately TICKS timer ticks. */
+/* Q.
+	timer가 적어도 x번 tick 할때까지 thread 호출의 실행을 일시 중단합니다. 
+	시스템이 idle(다음 thread가 없는) 상태가 아니라면, thread가 정확히 x번의 tick이 발생한 직후에 wake up 할 필요가 없습니다. 
+	thread가 적절한 시간동안 대기 한 후 ready queue에 놓이게 해주세요. 
+*/
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
-
+	
+	if (ticks < 0)
+		return;
+	struct thread *t = thread_current();
+	
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	// sema_down(&wait_sema);
+	thread_sleep(ticks + timer_ticks());
+	// sema_up(&wait_sema);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -125,6 +139,8 @@ timer_print_stats (void) {
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
+	if (ticks % 4 == 0)
+		thread_awake(ticks);
 	thread_tick ();
 }
 
