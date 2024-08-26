@@ -598,7 +598,7 @@ schedule (void) {
 		   schedule(). */
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
 			ASSERT (curr != next);
-			list_insert_ordered(&ready_list,&(curr->elem),thread_less_func, NULL);
+			list_push_back(&destruction_req,&curr->elem);
 		}
 
 		/* Before switching the thread, we first save the information
