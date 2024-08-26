@@ -57,6 +57,7 @@ timer_less_func (const struct list_elem *a_, const struct list_elem *b_,
 static bool
 thread_less_func (const struct list_elem *a_, const struct list_elem *b_,
             void *aux UNUSED) ;
+#define insert_ready(elem) (list_insert_ordered(&ready_list, &(elem), thread_less_func,NULL))
 //**********************************************
 
 /* Scheduling. */
@@ -257,7 +258,7 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_insert_ordered(&ready_list,&(t->elem),thread_less_func, NULL);
+	insert_ready(t->elem);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -320,7 +321,7 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_insert_ordered(&ready_list,&(curr->elem),thread_less_func, NULL);
+		insert_ready(curr->elem);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
