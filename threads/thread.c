@@ -597,7 +597,9 @@ allocate_tid (void) {
 static bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
 	const struct thread *a = list_entry (a_, struct thread, elem);
 	const struct thread *b = list_entry (b_, struct thread, elem);
-	return a->sleep_time < b->sleep_time;
+	if (a->priority == b->priority)
+		return a->sleep_time < b->sleep_time;
+	return a->priority > b->priority;
 };
 
 void thread_sleep(int64_t sleep_time) { // sleep_time = current_time + ticks
@@ -611,7 +613,7 @@ void thread_sleep(int64_t sleep_time) { // sleep_time = current_time + ticks
 }
 
 void thread_awake(int64_t current_time) {
-	while (!list_empty(&sleep_list) && list_entry(list_front(&sleep_list), struct thread, elem)->sleep_time < current_time) {
+	while (!list_empty(&sleep_list) && list_entry(list_front(&sleep_list), struct thread, elem)->sleep_time <= current_time) {
 		struct thread *awaken = list_entry(list_pop_front(&sleep_list), struct thread, elem);
 		thread_unblock(awaken);
 	}
