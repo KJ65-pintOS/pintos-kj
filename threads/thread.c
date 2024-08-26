@@ -47,11 +47,13 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 
 /* -- WAITING -- */
 static struct list sleep_list;
-
+static bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
+/* Priority */
+bool priority_less_func (const struct list_elem *curr_, const struct list_elem *next_, void *aux UNUSED);
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -242,11 +244,16 @@ thread_unblock (struct thread *t) {
 	enum intr_level old_level;
 
 	ASSERT (is_thread (t));
-
 	old_level = intr_disable ();
+
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	list_insert_ordered (&ready_list, &t->elem, priority_less_func, NULL);
+
 	t->status = THREAD_READY;
+
+	if (thread_current() != idle_thread && thread_get_priority() < t->priority)
+		thread_yield();
+
 	intr_set_level (old_level);
 }
 
@@ -305,21 +312,28 @@ thread_yield (void) {
 	enum intr_level old_level;
 
 	ASSERT (!intr_context ());
-
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered (&ready_list, &curr->elem, priority_less_func, NULL);
+
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's priority to NEW_PRIORITY. 
+   현재 스레드의 우선순위를 새 우선순위로 설정. 만약 현재 스레드의 우선순위가 더 이상 높지 않으면 우선순위를 양보
+*/
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	struct thread *front = list_entry(list_front(&ready_list), struct thread, elem);	
+	if (new_priority < front->priority)
+		thread_yield();
 }
 
-/* Returns the current thread's priority. */
+/* Returns the current thread's priority. 
+   현재 스레드의 우선순위를 반환. 우선 순위 기부가 있는 경우 더 높은 (기부된) 우선순위를 반환
+*/
 int
 thread_get_priority (void) {
 	return thread_current ()->priority;
@@ -425,7 +439,7 @@ static struct thread *
 next_thread_to_run (void) {
 	if (list_empty (&ready_list))
 		return idle_thread; 
-		return list_entry (list_pop_front (&ready_list), struct thread, elem);
+	return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
 /* Use iretq to launch the thread */
@@ -592,9 +606,17 @@ allocate_tid (void) {
 
 	return tid;
 }
+ 
+/* Priority */
+bool priority_less_func (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED) {
+	const struct thread *cur = list_entry (cur_, struct thread, elem);
+	const struct thread *next = list_entry (next_, struct thread, elem);
+	
+	return cur->priority > next->priority;
+}
 
 /* Waiting */
-static bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
+bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
 	const struct thread *a = list_entry (a_, struct thread, elem);
 	const struct thread *b = list_entry (b_, struct thread, elem);
 	if (a->priority == b->priority)
