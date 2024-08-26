@@ -92,6 +92,9 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	// *** 내 커스텀 변수 
+	int64_t sleep_time;
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -142,5 +145,9 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+//timer 커스텀 
+void thread_sleep(int64_t ticks);
+void thread_wakeup(int64_t ticks);
 
 #endif /* threads/thread.h */

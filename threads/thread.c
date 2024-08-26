@@ -45,6 +45,16 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
+//**********************************************
+// 8월 24일 waiting queue
+static struct list waiting_list;
+//void thread_sleep(int64_t ticks);
+static bool
+timer_less_func (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED);
+#define thread_entry(list_elem) (list_entry(list_elem, struct thread, elem))
+//**********************************************
+
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
@@ -109,6 +119,9 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+
+	/* custum init part  */
+	list_init(&waiting_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -299,11 +312,11 @@ thread_yield (void) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
-	ASSERT (!intr_context ());
+	ASSERT (!intr_context ());// it has to be internel interrupt
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, timer_less_func,NULL);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -409,6 +422,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	// initial sleep
+	t->sleep_time = 0;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -587,4 +603,39 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+void thread_sleep(int64_t ticks)
+{
+	struct thread *curr = thread_current();
+	enum intr_level old_level;
+	
+	ASSERT(ticks != 0);
+	ASSERT(intr_get_level() == INTR_ON);
+	ASSERT(!intr_context ());  // internel interrupt만 받음
+
+	old_level = intr_disable ();
+	curr->sleep_time = ticks;
+	list_insert_ordered(&waiting_list,&(curr->elem),timer_less_func,NULL);
+	thread_block();
+	intr_set_level (old_level);
+}
+
+/* Returns true if value A is less than value B, false
+   otherwise. */
+static bool
+timer_less_func (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED) 
+{
+  const struct thread *a = list_entry (a_, struct thread, elem);
+  const struct thread *b = list_entry (b_, struct thread, elem);
+  if( a->priority == b->priority)
+  	return a->sleep_time < b-> sleep_time;
+  return a->priority > b->priority;
+}
+
+void thread_wakeup(int64_t ticks)
+{
+	while(!list_empty(&waiting_list) && (list_entry(list_front(&waiting_list), struct thread, elem))->sleep_time <= ticks )
+		thread_unblock(list_entry(list_pop_front(&waiting_list),struct thread, elem));
 }
