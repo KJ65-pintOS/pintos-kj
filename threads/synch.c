@@ -32,6 +32,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+bool priority_ascd_sema (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -243,6 +245,7 @@ lock_held_by_current_thread (const struct lock *lock) {
 struct semaphore_elem {
 	struct list_elem elem;              /* List element. */
 	struct semaphore semaphore;         /* This semaphore. */
+	int priority;
 };
 
 /* Initializes condition variable COND.  A condition variable
@@ -285,7 +288,9 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	sema_init (&waiter.semaphore, 0);
-	list_push_back (&cond->waiters, &waiter.elem);
+	/* waiters는 waiter의 리스트! 다른 말로는 semaphore_elem의 list!!! 그래서 less func 안먹히는 거임!! */
+	list_push_back (&cond->waiters, &waiter.elem);	
+	waiter.priority = thread_get_priority();
 	lock_release (lock);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
@@ -304,10 +309,13 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (lock_held_by_current_thread (lock));
-
-	if (!list_empty (&cond->waiters))
-		sema_up (&list_entry (list_pop_front (&cond->waiters),
-					struct semaphore_elem, elem)->semaphore);
+	if (!list_empty (&cond->waiters)) {
+		struct list_elem *highest = list_min(&cond->waiters, priority_ascd_sema, NULL);
+		struct semaphore_elem *highest_t = list_entry(highest, struct semaphore_elem, elem);
+		list_remove(highest);
+		sema_up (&list_entry (highest,
+				struct semaphore_elem, elem)->semaphore);
+	}
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -323,4 +331,11 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 
 	while (!list_empty (&cond->waiters))
 		cond_signal (cond, lock);
+
+}
+bool priority_ascd_sema (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED) {
+	const struct semaphore_elem *cur = list_entry (cur_, struct semaphore_elem, elem);
+	const struct semaphore_elem *next = list_entry (next_, struct semaphore_elem, elem);
+	
+	return cur->priority > next->priority;
 }
