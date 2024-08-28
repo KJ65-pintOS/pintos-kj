@@ -93,8 +93,13 @@ struct thread {
 	int priority;                       /* Priority. */
 
 	// *** 내 커스텀 변수 
+	int donated_priority;
 	int64_t sleep_time;
 
+	uint8_t padding_1;
+	uint8_t custom_flag;
+	uint8_t padding_2;
+	
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -146,8 +151,24 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
+//***************************************************
+//custom area
+
 //timer 커스텀 
 void thread_sleep(int64_t ticks);
 void thread_wakeup(int64_t ticks);
 
+// donate 커스텀
+/*
+	return true for sucess to donate 
+	return flase fot refuse to donate
+*/
+int thread_donate_priority(struct thread* t);
+
+#define CFLAG_PRT (uint8_t)(1)
+#define is_prt_donated(t) (t->custom_flag & CFLAG_PRT)
+#define set_donated_prt(t,p) ({t->custom_flag |= CFLAG_PRT; t->donated_priority = p;})
+#define free_donated_prt(t) (t->custom_flag &= ~CFLAG_PRT)
+
+//***************************************************
 #endif /* threads/thread.h */
