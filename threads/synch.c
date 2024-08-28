@@ -31,6 +31,13 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+/***************************************/
+//custom
+
+static bool
+priority_less_func (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED);
+/***************************************/
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -48,6 +55,16 @@ sema_init (struct semaphore *sema, unsigned value) {
 	sema->value = value;
 	list_init (&sema->waiters);
 }
+//************************************
+static bool
+priority_less_func (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED) 
+{
+  const struct thread *a = list_entry (a_, struct thread, elem);
+  const struct thread *b = list_entry (b_, struct thread, elem);
+  return a->priority > b->priority;
+}
+//************************************
 
 /* Down or "P" operation on a semaphore.  Waits for SEMA's value
    to become positive and then atomically decrements it.
@@ -66,7 +83,7 @@ sema_down (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
+		list_insert_ordered(&sema->waiters, &(thread_current()->elem), priority_less_func,NULL);
 		thread_block ();
 	}
 	sema->value--;
@@ -184,11 +201,19 @@ lock_init (struct lock *lock) {
    we need to sleep. */
 void
 lock_acquire (struct lock *lock) {
+   enum intr_level old_level;
+
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
+   
+   old_level = intr_disable();
+   //과연 여기서 intrrut를 안켜도 괜찮은가?
+	!(lock->semaphore.value == 0) ?  : thread_donate_priority(lock->holder);
 
 	sema_down (&lock->semaphore);
+
+   intr_set_level(old_level);
 	lock->holder = thread_current ();
 }
 
@@ -221,6 +246,8 @@ void
 lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
+
+   !is_prt_donated(lock->holder) ? : free_donated_prt(lock->holder);
 
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);

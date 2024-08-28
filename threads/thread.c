@@ -350,7 +350,8 @@ thread_set_priority (int new_priority) {
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) {
-	return thread_current ()->priority;
+	struct thread* t = thread_current();
+	return ( is_prt_donated(t) ? t->donated_priority: t->priority );
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -443,8 +444,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
 
-	// initial sleep
+	/*custom valuable*/
+	t->donated_priority = 0;
 	t->sleep_time = 0;
+	t->custom_flag = 0;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -667,4 +670,30 @@ static int is_priority_less_than_next(int64_t p){
 	if( front->priority > p)
 		return true;
 	return false;
+}
+// int thread_compare_priority();
+/*
+	return true for sucess to donate 
+	return flase fot refuse to donate
+
+	't'  has to be a lock holder
+*/
+int thread_donate_priority(struct thread* t)
+{
+	ASSERT(is_thread(t));
+
+	int p = thread_current()->priority;
+	if(is_prt_donated(t))
+	{
+		if(t->donated_priority > p)
+			return false;
+		set_donated_prt(t,p);
+	}
+	else
+	{
+		if(t->priority > p)
+			return false;
+		set_donated_prt(t,p);
+	}
+	return true;
 }
