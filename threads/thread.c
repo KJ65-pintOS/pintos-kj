@@ -58,6 +58,7 @@ static bool
 thread_less_func (const struct list_elem *a_, const struct list_elem *b_,
             void *aux UNUSED) ;
 #define insert_ready(elem) (list_insert_ordered(&ready_list, &(elem), thread_less_func,NULL))
+static int is_priority_low(int64_t p);
 //**********************************************
 
 /* Scheduling. */
@@ -224,7 +225,8 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
-
+	if(is_priority_low(thread_current()->priority))
+		thread_yield();
 	return tid;
 }
 
@@ -260,6 +262,7 @@ thread_unblock (struct thread *t) {
 	ASSERT (t->status == THREAD_BLOCKED);
 	insert_ready(t->elem);
 	t->status = THREAD_READY;
+	// if(strcmp(t->name,"idle"))
 	intr_set_level (old_level);
 }
 
@@ -341,6 +344,8 @@ thread_less_func (const struct list_elem *a_, const struct list_elem *b_,
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	if(is_priority_low(new_priority))
+		thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -654,4 +659,13 @@ void thread_wakeup(int64_t ticks)
 {
 	while(!list_empty(&waiting_list) && (list_entry(list_front(&waiting_list), struct thread, elem))->sleep_time <= ticks )
 		thread_unblock(list_entry(list_pop_front(&waiting_list),struct thread, elem));
+}
+
+static int is_priority_low(int64_t p){
+	if(list_empty(&ready_list))
+		return false;
+	struct thread *front = thread_entry(list_front(&ready_list));
+	if( front->priority > p)
+		return true;
+	return false;
 }
