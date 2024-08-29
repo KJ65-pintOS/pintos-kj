@@ -46,19 +46,24 @@ static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
 //**********************************************
-// 8월 24일 waiting queue
+// custom define 
+
 static struct list waiting_list;
-//void thread_sleep(int64_t ticks);
-static bool
-timer_less_func (const struct list_elem *a_, const struct list_elem *b_,
-            void *aux UNUSED);
-#define thread_entry(list_elem) (list_entry(list_elem, struct thread, elem))
 
 static bool
-thread_less_func (const struct list_elem *a_, const struct list_elem *b_,
-            void *aux UNUSED) ;
-#define insert_ready(elem) (list_insert_ordered(&ready_list, &(elem), thread_less_func,NULL))
-static int is_priority_less_than_next(int64_t p);
+sort_by_prtAndSleep_desc (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
+
+static bool
+sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) ;
+
+static int 
+is_priority_less_than_next(int64_t p);
+
+#define thread_entry(list_elem) (list_entry(list_elem, struct thread, elem))
+
+#define insert_ready(elem) (list_insert_ordered(&ready_list, &(elem), sort_by_prt_desc,NULL))
+
+
 //**********************************************
 
 /* Scheduling. */
@@ -225,7 +230,7 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
-	if(is_priority_less_than_next(thread_current()->priority))
+	if(is_priority_less_than_next(thread_current()->priority)) //todo thread_get_priority 로 바꾸어도 문제는 없을듯.
 		thread_yield();
 	return tid;
 }
@@ -328,16 +333,6 @@ thread_yield (void) {
 	intr_set_level (old_level);
 }
 
-//************************************
-static bool
-thread_less_func (const struct list_elem *a_, const struct list_elem *b_,
-            void *aux UNUSED) 
-{
-  const struct thread *a = list_entry (a_, struct thread, elem);
-  const struct thread *b = list_entry (b_, struct thread, elem);
-  return a->priority > b->priority;
-}
-//************************************
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
@@ -447,7 +442,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	/*custom valuable*/
 	t->donated_priority = 0;
 	t->sleep_time = 0;
-	t->custom_flag = 0;
+	t->cflag = 0;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -577,6 +572,7 @@ do_schedule(int status) {
 	schedule ();
 }
 
+
 static void
 schedule (void) {
 	struct thread *curr = running_thread ();
@@ -615,6 +611,7 @@ schedule (void) {
 	}
 }
 
+
 /* Returns a tid to use for a new thread. */
 static tid_t
 allocate_tid (void) {
@@ -628,7 +625,13 @@ allocate_tid (void) {
 	return tid;
 }
 
-void thread_sleep(int64_t ticks)
+
+
+/***************************************************************/
+// custom public function. all in here are public method
+
+void 
+thread_sleep(int64_t ticks)
 {
 	struct thread *curr = thread_current();
 	enum intr_level old_level;
@@ -639,46 +642,22 @@ void thread_sleep(int64_t ticks)
 
 	old_level = intr_disable ();
 	curr->sleep_time = ticks;
-	list_insert_ordered(&waiting_list,&(curr->elem),timer_less_func,NULL);
+	list_insert_ordered(&waiting_list,&(curr->elem),sort_by_prtAndSleep_desc,NULL);
 	thread_block();
 	intr_set_level (old_level);
 }
 
-/* Returns true if value A is less than value B, false
-   otherwise. */
-static bool
-timer_less_func (const struct list_elem *a_, const struct list_elem *b_,
-            void *aux UNUSED) 
-{
-  const struct thread *a = list_entry (a_, struct thread, elem);
-  const struct thread *b = list_entry (b_, struct thread, elem);
-  if( a->priority == b->priority)
-  	return a->sleep_time < b-> sleep_time;
-  return a->priority > b->priority;
-}
 
-void thread_wakeup(int64_t ticks)
+void 
+thread_wakeup(int64_t ticks)
 {
 	while(!list_empty(&waiting_list) && (list_entry(list_front(&waiting_list), struct thread, elem))->sleep_time <= ticks )
 		thread_unblock(list_entry(list_pop_front(&waiting_list),struct thread, elem));
 }
 
-static int is_priority_less_than_next(int64_t p){
-	if(list_empty(&ready_list))
-		return false;
-	struct thread *front = thread_entry(list_front(&ready_list));
-	if( front->priority > p)
-		return true;
-	return false;
-}
-// int thread_compare_priority();
-/*
-	return true for sucess to donate 
-	return flase fot refuse to donate
 
-	't'  has to be a lock holder
-*/
-int thread_donate_priority(struct thread* t)
+int 
+thread_try_donate_prt(struct thread* t)
 {
 	ASSERT(is_thread(t));
 
@@ -696,4 +675,49 @@ int thread_donate_priority(struct thread* t)
 		set_donated_prt(t,p);
 	}
 	return true;
+}
+
+
+void 
+thread_event()
+{
+	if(is_priority_less_than_next(thread_get_priority()))
+		thread_yield();
+}
+
+
+/***************************************************************/
+// custom static function. all in here are static method
+
+
+/* Returns true if value A is less than value B, false
+   otherwise. */
+static bool
+sort_by_prtAndSleep_desc(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) 
+{
+  const struct thread *a = list_entry (a_, struct thread, elem);
+  const struct thread *b = list_entry (b_, struct thread, elem);
+  if( a->priority == b->priority)
+  	return a->sleep_time < b-> sleep_time;
+  return a->priority > b->priority;
+}
+
+/* Compare 'p'(p should be priority of some thread) 
+   with ready_list thread. */
+static int 
+is_priority_less_than_next(int64_t p)
+{
+	if(list_empty(&ready_list))
+		return false;
+	struct thread *front = thread_entry(list_front(&ready_list));
+	return ( front->priority > p);
+}
+
+// Todo 이후에 bit mask 추가해서 insert_by_prt 와 통합
+static bool
+sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) 
+{
+  const struct thread *a = list_entry (a_, struct thread, elem);
+  const struct thread *b = list_entry (b_, struct thread, elem);
+  return a->priority > b->priority;
 }

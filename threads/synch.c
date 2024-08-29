@@ -209,7 +209,7 @@ lock_acquire (struct lock *lock) {
    
    old_level = intr_disable();
    //과연 여기서 intrrut를 안켜도 괜찮은가?
-	!(lock->semaphore.value == 0) ?  : thread_donate_priority(lock->holder);
+	(lock->semaphore.value == 0) && thread_try_donate_prt(lock->holder);
 
 	sema_down (&lock->semaphore);
 
@@ -227,7 +227,7 @@ bool
 lock_try_acquire (struct lock *lock) {
 	bool success;
 
-	ASSERT (lock != NULL);
+	ASSERT (lock != NULL); 
 	ASSERT (!lock_held_by_current_thread (lock));
 
 	success = sema_try_down (&lock->semaphore);
@@ -247,10 +247,11 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
-   !is_prt_donated(lock->holder) ? : free_donated_prt(lock->holder);
+   is_prt_donated(lock->holder) && free_donated_prt(lock->holder);
 
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
+   thread_event();
 }
 
 /* Returns true if the current thread holds LOCK, false
