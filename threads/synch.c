@@ -37,6 +37,11 @@
 static bool
 priority_less_func (const struct list_elem *a_, const struct list_elem *b_,
             void *aux UNUSED);
+
+#define lock_peeker(list) (list_entry(list_front(&list),struct lock, elem))
+#define lock_prt(lock) (&lock->max_prt)
+bool lock_checkup(struct lock* l);
+
 /***************************************/
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -186,7 +191,7 @@ sema_test_helper (void *sema_) {
 void
 lock_init (struct lock *lock) {
 	ASSERT (lock != NULL);
-
+   int max_prt = PRI_MIN;
 	lock->holder = NULL;
 	sema_init (&lock->semaphore, 1);
 }
@@ -208,11 +213,17 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!lock_held_by_current_thread (lock));
    
    old_level = intr_disable();
-   //과연 여기서 intrrut를 안켜도 괜찮은가?
-	(lock->semaphore.value == 0) && thread_try_donate_prt(lock->holder);
+   
+	(lock->semaphore.value == 0) // 이 시점에 습득할 수 있는지 여부가 결정됨. 만약 습득할 수 없다면.
+   && lock_checkup(lock); // 상위 lock에 대해 Priority 기부를 시도하는 코드가 와야함
 
 	sema_down (&lock->semaphore);
-
+   
+   //lock을 얻은 순간 나(현재스레드)는 lock prt가 가장 큰 순간이므로, 비교를 하지않고 넣어도됨.
+   //thread에 lock 추가 
+   struct list * locks = &thread_current()->locks;
+   list_insert_ordered(locks,&(lock->elem),priority_less_func,NULL);
+   
    intr_set_level(old_level);
 	lock->holder = thread_current ();
 }
@@ -247,7 +258,24 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
-   is_prt_donated(lock->holder) && free_donated_prt(lock->holder);
+   /********************************************/ 
+   // done 
+   enum intr_level old_level = intr_disable();
+
+   free_donated_prt(lock->holder); //현재 donated 값을 제거
+   list_remove(&(lock->elem)); //현재 스레드에서 lock을 제거 
+
+   // 남은 lock에서 최댓값(맨앞)을 가져와 비교하여 try donate
+   
+   struct thread * curr = thread_current();
+   struct lock *peeked_lock;
+   if(!list_empty(&curr->locks))
+   {
+      peeked_lock = lock_peeker(curr->locks); //맨 앞 스레드의 값을 가져오고있음. 하지만 Lock이랑 맨 첫번째 값이랑 비교후 
+      thread_try_donate_prt(peeked_lock->max_prt, curr); // 이 시점에서 lock의 prt가 바뀌면 안됨.
+   }
+   intr_set_level(old_level);
+   /********************************************/
 
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
@@ -348,4 +376,14 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 
 	while (!list_empty (&cond->waiters))
 		cond_signal (cond, lock);
+}
+
+bool lock_checkup(struct lock* l)
+{
+   struct thread* holder = l->holder;
+   struct thread* curr = thread_current();
+   int prt = thread_get_priority();
+   if( prt > l->max_prt )
+      thread_try_donate_prt(prt, holder);
+   // lock의 max_prt와 현재 스레드의 Prt 비교후 
 }

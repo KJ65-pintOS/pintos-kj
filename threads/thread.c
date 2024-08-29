@@ -130,10 +130,10 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
-
+	
 	/* custum init part  */
 	list_init(&waiting_list);
-
+	
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -443,6 +443,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->donated_priority = 0;
 	t->sleep_time = 0;
 	t->cflag = 0;
+	list_init(&t->locks);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -656,23 +657,25 @@ thread_wakeup(int64_t ticks)
 }
 
 
-int 
-thread_try_donate_prt(struct thread* t)
+bool // thread t에게 현재 스레드의 prt 기부를 시도함.
+thread_try_donate_prt(int given_prt, struct thread* to)
 {
-	ASSERT(is_thread(t));
+	ASSERT(is_thread(to));
 
-	int p = thread_current()->priority;
-	if(is_prt_donated(t))
+	if(is_prt_donated(to))
 	{
-		if(t->donated_priority > p)
+		if(to->donated_priority > given_prt)
 			return false;
-		set_donated_prt(t,p);
+		set_donated_prt(to,given_prt);
 	}
 	else
 	{
-		if(t->priority > p)
+		if(to->priority > given_prt)
+		{
+			free_donated_prt(to);
 			return false;
-		set_donated_prt(t,p);
+		}
+		set_donated_prt(to,given_prt);
 	}
 	return true;
 }
@@ -683,6 +686,12 @@ thread_event()
 {
 	if(is_priority_less_than_next(thread_get_priority()))
 		thread_yield();
+}
+
+bool
+thread_get_priority_any(struct thread* t)
+{
+	return is_prt_donated(t) ? t->donated_priority : t->priority;
 }
 
 
