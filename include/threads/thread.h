@@ -27,6 +27,8 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+#define INIT_DNTD_PRI -1
+#define is_donated(t)	((t) != NULL && (t)->donated_priority != INIT_DNTD_PRI)
 
 /* A kernel thread or user process.
  *
@@ -91,6 +93,8 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
+	int donated_priority;
+
 	int64_t sleep_time;						
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */

@@ -338,6 +338,8 @@ thread_set_priority (int new_priority) {
 */
 int
 thread_get_priority (void) {
+	if (is_donated(thread_current()))
+		return thread_current() ->donated_priority;
 	return thread_current ()->priority;
 }
 
@@ -430,6 +432,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	/* var for priority donation */
+	t->donated_priority = INIT_DNTD_PRI;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -613,8 +617,11 @@ allocate_tid (void) {
 bool priority_less_func (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED) {
 	const struct thread *cur = list_entry (cur_, struct thread, elem);
 	const struct thread *next = list_entry (next_, struct thread, elem);
-	
-	return cur->priority > next->priority;
+	int cur_pri = is_donated(cur) ? 
+				cur->donated_priority : cur->priority;
+	int next_pri = is_donated(next) ? 
+				next->donated_priority : next->priority;
+	return cur_pri > next_pri;
 }
 
 /* Waiting */

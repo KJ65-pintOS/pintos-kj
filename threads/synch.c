@@ -112,6 +112,7 @@ sema_up (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 	sema->value++;
+	
 	if (!list_empty (&sema->waiters)) {
 		struct list_elem *highest = list_min(&sema->waiters, priority_less_func, NULL);
 		struct thread *highest_t = list_entry(highest, struct thread, elem);
@@ -193,7 +194,13 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
+	struct thread* lock_holder = lock->holder;
+	struct thread* current = thread_current();
+	if (lock_holder != NULL && lock_holder->priority < thread_get_priority()) 
+		lock_holder->donated_priority = thread_get_priority();
+	
 	sema_down (&lock->semaphore);
+
 	lock->holder = thread_current ();
 }
 
@@ -226,7 +233,8 @@ void
 lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
-
+	if (is_donated(lock->holder)) 
+		lock->holder->donated_priority = INIT_DNTD_PRI;
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
