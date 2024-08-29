@@ -191,7 +191,7 @@ sema_test_helper (void *sema_) {
 void
 lock_init (struct lock *lock) {
 	ASSERT (lock != NULL);
-   int max_prt = PRI_MIN;
+   lock->max_prt = PRI_MIN;
 	lock->holder = NULL;
 	sema_init (&lock->semaphore, 1);
 }
@@ -383,7 +383,9 @@ bool lock_checkup(struct lock* l)
    struct thread* holder = l->holder;
    struct thread* curr = thread_current();
    int prt = thread_get_priority();
-   if( prt > l->max_prt )
+   if( prt > l->max_prt ){ 
+      l->max_prt = prt; //두번째 실행에서 오버플로만 해결하면 됨.
       thread_try_donate_prt(prt, holder);
+   }
    // lock의 max_prt와 현재 스레드의 Prt 비교후 
 }
