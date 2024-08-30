@@ -101,7 +101,7 @@ struct thread {
 	uint8_t padding_2;
 	
 	struct list locks; 
-
+	struct lock* wanted_lock;
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -168,11 +168,18 @@ void thread_wakeup(int64_t ticks);
 	return flase fot refuse to donate
 */
 
-#define CFLAG_PRT (uint8_t)(1)
-#define is_prt_donated(t) (t->cflag & CFLAG_PRT)
-#define set_donated_prt(t,p) ({t->cflag |= CFLAG_PRT; t->donated_priority = p;})
-#define free_donated_prt(t) (t->cflag &= ~CFLAG_PRT)
+#define CFLAG_PRT_DONATED 0x1
+#define CFLAG_WAIT_LOCK 0x2
 
+#define is_prt_donated(t) (t->cflag & CFLAG_PRT_DONATED)
+#define set_donated_prt(t,p) ({t->cflag |= CFLAG_PRT_DONATED; t->donated_priority = p;})
+#define free_donated_prt(t) (t->cflag &= ~CFLAG_PRT_DONATED)
+
+#define is_wait_lock(t) (t->cflag & CFLAG_WAIT_LOCK)
+#define set_wait_lock(t,lock) ({t->cflag |= CFLAG_WAIT_LOCK; t->wanted_lock = &(lock);})
+#define free_wait_lock(t) (t->cflag &= ~CFLAG_WAIT_LOCK)
+
+bool it_is_thread(struct thread* t);
 
 bool // thread t에게 현재 스레드의 prt 기부를 시도함.
 thread_try_donate_prt(int given_prt, struct thread* to);
@@ -180,7 +187,7 @@ thread_try_donate_prt(int given_prt, struct thread* to);
 void 
 thread_event();
 
-bool
+int
 thread_get_priority_any(struct thread* t);
 //***************************************************
 

@@ -86,6 +86,10 @@ static tid_t allocate_tid (void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
+bool it_is_thread(struct thread* t)
+{
+	return is_thread(t);
+}
 
 /* Returns the running thread.
  * Read the CPU's stack pointer `rsp', and then round that
@@ -217,7 +221,7 @@ thread_create (const char *name, int priority,
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
 
-	/* Call the kernel_thread if it scheduled.
+;	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
 	t->tf.R.rdi = (uint64_t) function;
@@ -230,7 +234,7 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
-	if(is_priority_less_than_next(thread_current()->priority)) //todo thread_get_priority 로 바꾸어도 문제는 없을듯.
+	if(is_priority_less_than_next(thread_get_priority())) //todo thread_get_priority 로 바꾸어도 문제는 없을듯.
 		thread_yield();
 	return tid;
 }
@@ -336,7 +340,7 @@ thread_yield (void) {
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
-thread_set_priority (int new_priority) {
+thread_set_priority (int new_priority) { //donated Flag에서 적절한 작동 보장 해야함
 	thread_current ()->priority = new_priority;
 	if(is_priority_less_than_next(new_priority))
 		thread_yield();
@@ -346,7 +350,8 @@ thread_set_priority (int new_priority) {
 int
 thread_get_priority (void) {
 	struct thread* t = thread_current();
-	return ( is_prt_donated(t) ? t->donated_priority: t->priority );
+	return ( is_prt_donated(t)? t->donated_priority : t->priority);
+	//return thread_get_priority_any(thread_current());
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -443,6 +448,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->donated_priority = 0;
 	t->sleep_time = 0;
 	t->cflag = 0;
+	t->wanted_lock = (void*)0;
 	list_init(&t->locks);
 }
 
@@ -608,6 +614,7 @@ schedule (void) {
 
 		/* Before switching the thread, we first save the information
 		 * of current running. */
+		
 		thread_launch (next);
 	}
 }
@@ -671,10 +678,7 @@ thread_try_donate_prt(int given_prt, struct thread* to)
 	else
 	{
 		if(to->priority > given_prt)
-		{
-			free_donated_prt(to);
 			return false;
-		}
 		set_donated_prt(to,given_prt);
 	}
 	return true;
@@ -688,15 +692,17 @@ thread_event()
 		thread_yield();
 }
 
-bool
+int
 thread_get_priority_any(struct thread* t)
-{
-	return is_prt_donated(t) ? t->donated_priority : t->priority;
+{	
+	uint8_t test = is_prt_donated(t);
+	return (test ? t->donated_priority : t->priority);
 }
 
 
 /***************************************************************/
 // custom static function. all in here are static method
+
 
 
 /* Returns true if value A is less than value B, false
@@ -719,7 +725,7 @@ is_priority_less_than_next(int64_t p)
 	if(list_empty(&ready_list))
 		return false;
 	struct thread *front = thread_entry(list_front(&ready_list));
-	return ( front->priority > p);
+	return (p < thread_get_priority_any(front));
 }
 
 // Todo 이후에 bit mask 추가해서 insert_by_prt 와 통합
@@ -728,5 +734,5 @@ sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *
 {
   const struct thread *a = list_entry (a_, struct thread, elem);
   const struct thread *b = list_entry (b_, struct thread, elem);
-  return a->priority > b->priority;
+  return thread_get_priority_any(a) > thread_get_priority_any(b);
 }
