@@ -340,10 +340,7 @@ thread_set_priority (int new_priority) {
 */
 int
 thread_get_priority (void) {
-	struct list *cur_locks = &thread_current()->locks;	
-	if (is_donated(thread_current()))
-		return thread_current() ->donated_priority;
-	return thread_current ()->priority;
+	return get_any_priority(thread_current ());
 }
 
 /* Sets the current thread's nice value to NICE. */

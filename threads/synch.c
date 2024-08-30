@@ -198,8 +198,8 @@ lock_acquire (struct lock *lock) {
 
 	struct thread* lock_holder = lock->holder;
 	if (lock->max_priority < thread_get_priority()) {
-		lock->max_priority = thread_get_priority(); // 1. lock_max 갱신
 		if (lock_holder != NULL && get_any_priority(lock_holder) < thread_get_priority()) {
+			lock->max_priority = thread_get_priority(); // 1. lock_max 갱신
 			lock_holder->donated_priority = thread_get_priority(); // 2. lock_holder dona 갱신
 			if (list_entry(list_front(&lock_holder->locks), struct lock, elem)->max_priority < thread_get_priority()) {
 				list_remove(&lock->elem); // 3. lock_holder의 리스트 재정렬
