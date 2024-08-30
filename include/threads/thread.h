@@ -28,7 +28,6 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 #define INIT_DNTD_PRI -1
-#define is_donated(t)	((t) != NULL && (t)->donated_priority != INIT_DNTD_PRI)
 
 /* A kernel thread or user process.
  *
@@ -98,6 +97,7 @@ struct thread {
 	int64_t sleep_time;						
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+	struct list locks;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -153,5 +153,7 @@ void thread_awake(int64_t current_time);
 
 /* Priority */
 bool priority_less_func (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
+int get_any_priority(const struct thread *t);
+bool is_donated(const struct thread *t);
 
 #endif /* threads/thread.h */

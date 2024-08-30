@@ -52,8 +52,10 @@ static bool timer_less_func(const struct list_elem *a_, const struct list_elem *
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
+
 /* Priority */
 bool priority_less_func (const struct list_elem *curr_, const struct list_elem *next_, void *aux UNUSED);
+bool priority_ascd_lock  (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -338,6 +340,7 @@ thread_set_priority (int new_priority) {
 */
 int
 thread_get_priority (void) {
+	struct list *cur_locks = &thread_current()->locks;	
 	if (is_donated(thread_current()))
 		return thread_current() ->donated_priority;
 	return thread_current ()->priority;
@@ -434,6 +437,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->magic = THREAD_MAGIC;
 	/* var for priority donation */
 	t->donated_priority = INIT_DNTD_PRI;
+	list_init(&(t->locks));
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -617,11 +621,14 @@ allocate_tid (void) {
 bool priority_less_func (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED) {
 	const struct thread *cur = list_entry (cur_, struct thread, elem);
 	const struct thread *next = list_entry (next_, struct thread, elem);
-	int cur_pri = is_donated(cur) ? 
-				cur->donated_priority : cur->priority;
-	int next_pri = is_donated(next) ? 
-				next->donated_priority : next->priority;
-	return cur_pri > next_pri;
+	return get_any_priority(cur) > get_any_priority(next);
+}
+
+int get_any_priority(const struct thread *t) {
+	return is_donated(t) ? t->donated_priority : t->priority;
+}
+bool is_donated(const struct thread *t) {
+	return t->donated_priority != INIT_DNTD_PRI;
 }
 
 /* Waiting */

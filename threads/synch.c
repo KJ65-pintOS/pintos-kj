@@ -33,6 +33,7 @@
 #include "threads/thread.h"
 
 bool priority_ascd_sema (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
+bool priority_ascd_lock(const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -178,6 +179,7 @@ lock_init (struct lock *lock) {
 
 	lock->holder = NULL;
 	sema_init (&lock->semaphore, 1);
+	lock->max_priority = INIT_DNTD_PRI;
 }
 
 /* Acquires LOCK, sleeping until it becomes available if
@@ -195,12 +197,20 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!lock_held_by_current_thread (lock));
 
 	struct thread* lock_holder = lock->holder;
-	struct thread* current = thread_current();
-	if (lock_holder != NULL && lock_holder->priority < thread_get_priority()) 
-		lock_holder->donated_priority = thread_get_priority();
-	
+	if (lock->max_priority < thread_get_priority()) {
+		lock->max_priority = thread_get_priority(); // 1. lock_max 갱신
+		if (lock_holder != NULL && get_any_priority(lock_holder) < thread_get_priority()) {
+			lock_holder->donated_priority = thread_get_priority(); // 2. lock_holder dona 갱신
+			if (list_entry(list_front(&lock_holder->locks), struct lock, elem)->max_priority < thread_get_priority()) {
+				list_remove(&lock->elem); // 3. lock_holder의 리스트 재정렬
+				list_insert_ordered(&lock_holder->locks, &lock->elem, priority_ascd_lock, NULL);
+			}
+		}
+	}
 	sema_down (&lock->semaphore);
-
+	// sema down를 통과했다 == lock을 획득
+	lock->max_priority = thread_get_priority();
+	list_insert_ordered(&thread_current()->locks, &lock->elem, priority_ascd_lock, NULL);
 	lock->holder = thread_current ();
 }
 
@@ -233,8 +243,14 @@ void
 lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
-	if (is_donated(lock->holder)) 
-		lock->holder->donated_priority = INIT_DNTD_PRI;
+	list_remove(&lock->elem);
+	struct thread *lock_holder = lock->holder;
+	if (list_empty(&lock_holder->locks)) 
+		lock_holder->donated_priority = INIT_DNTD_PRI;	
+	else 
+		lock_holder->donated_priority = list_entry(list_front(&lock_holder->locks), struct lock, elem)->max_priority;
+	
+	lock->max_priority = INIT_DNTD_PRI;
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
@@ -346,4 +362,10 @@ bool priority_ascd_sema (const struct list_elem *cur_, const struct list_elem *n
 	const struct semaphore_elem *next = list_entry (next_, struct semaphore_elem, elem);
 	
 	return cur->priority > next->priority;
+}
+bool priority_ascd_lock(const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED) {
+	const struct lock *cur = list_entry (cur_, struct lock, elem);
+	const struct lock *next = list_entry (next_, struct lock, elem);
+	
+	return cur->max_priority > next->max_priority;
 }
