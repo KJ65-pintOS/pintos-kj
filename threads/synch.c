@@ -34,6 +34,10 @@
 
 bool priority_ascd_sema (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
 bool priority_ascd_lock(const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
+void priority_rec_update(struct lock *lock, int larger_prioty);
+void locks_reorder(struct lock *lock, int larger_prioty);
+void lock_update(struct lock *lock, int larger_prioty);
+bool is_rec_update(struct lock *lock, int larger_prioty);
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -196,23 +200,46 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
-	struct thread* lock_holder = lock->holder;
-	if (lock->max_priority < thread_get_priority()) {
-		if (lock_holder != NULL && get_any_priority(lock_holder) < thread_get_priority()) {
-			lock->max_priority = thread_get_priority(); // 1. lock_max 갱신
-			lock_holder->donated_priority = thread_get_priority(); // 2. lock_holder dona 갱신
-			if (list_entry(list_front(&lock_holder->locks), struct lock, elem)->max_priority < thread_get_priority()) {
-				list_remove(&lock->elem); // 3. lock_holder의 리스트 재정렬
-				list_insert_ordered(&lock_holder->locks, &lock->elem, priority_ascd_lock, NULL);
-			}
-		}
-	}
+	thread_current()->wanted_lock = lock;
+	if (lock->max_priority < thread_get_priority()) 
+		priority_rec_update(lock, thread_get_priority());
+
 	sema_down (&lock->semaphore);
 	// sema down를 통과했다 == lock을 획득
-	lock->max_priority = thread_get_priority();
 	list_insert_ordered(&thread_current()->locks, &lock->elem, priority_ascd_lock, NULL);
+	thread_current()->wanted_lock = NULL;
 	lock->holder = thread_current ();
 }
+
+void priority_rec_update(struct lock* lock, int larger_prioty) {
+	struct thread* lock_holder = lock->holder;
+	if (lock_holder != NULL && get_any_priority(lock_holder) < larger_prioty) {
+        lock_update(lock, larger_prioty);
+        locks_reorder(lock_holder, lock);
+		if (is_rec_update(lock, larger_prioty))
+			priority_rec_update(lock_holder->wanted_lock, larger_prioty);
+	}
+}
+
+void lock_update(struct lock *lock, int larger_prioty)
+{
+    lock->max_priority = larger_prioty;            // 1. lock_max 갱신
+    lock->holder->donated_priority = larger_prioty; // 2. lock_holder dona 갱신
+}
+
+void locks_reorder(struct lock *lock, int larger_prioty)
+{
+    if (list_entry(list_front(&lock->holder->locks), struct lock, elem)->max_priority < larger_prioty)
+    {
+        list_remove(&lock->elem); // 3. lock_holder의 리스트 재정렬
+        list_insert_ordered(&lock->holder->locks, &lock->elem, priority_ascd_lock, NULL);
+    }
+}
+
+bool is_rec_update(struct lock *lock, int larger_prioty) {
+	return (lock->holder->wanted_lock != NULL) && (lock->holder->wanted_lock->max_priority < larger_prioty);
+}
+
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current
