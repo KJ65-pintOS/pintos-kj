@@ -42,9 +42,11 @@ priority_less_func_lock (const struct list_elem *a_, const struct list_elem *b_,
             void *aux UNUSED) ;
 
 #define lock_peeker(list) (list_entry(list_front(&list),struct lock, elem))
+#define thread_peeker(list) (list_entry(list_front(&list),struct thread, elem))
 #define lock_prt(lock) (&lock->max_prt)
-bool lock_checkup(struct thread* t, struct lock* l);
-bool lock_climbing(struct thread *t);
+bool lock_checkup(struct thread* t, struct lock* l,int flag);
+static void replace(struct list* l, struct list_elem *elem, list_less_func * less);
+
 /***************************************/
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -144,11 +146,13 @@ sema_up (struct semaphore *sema) {
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-   sema->value++;
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
-	
+   
+	if (!list_empty (&sema->waiters)){
+      struct thread* poped_thread = list_entry (list_pop_front (&sema->waiters),struct thread, elem);
+      list_remove(&poped_thread->elem);
+		thread_unblock (poped_thread);
+   }
+	sema->value++;
 	intr_set_level (old_level);
 }
 
@@ -228,13 +232,17 @@ lock_acquire (struct lock *lock) {
    
    old_level = intr_disable();
    
-	(lock->semaphore.value == 0) // 이 시점에 습득할 수 있는지 여부가 결정됨. 만약 습득할 수 없다면.
-   && lock_checkup(thread_current(),lock); // 상위 lock에 대해 Priority 기부를 시도하는 코드가 와야함
+   if(lock->semaphore.value == 0)
+   {
+      set_wait_lock(thread_current(),lock);
+      lock_checkup(thread_current(),lock,0);
+   }	
    
 	sema_down (&lock->semaphore);
-
+   // list_remove(&thread_current()->elem);
    free_wait_lock(thread_current());
    
+   //lock->max_prt = thread_get_priority_any(list_entry(list_front(&lock->semaphore.waiters),struct thread, elem));
    //lock을 얻은 순간 나(현재스레드)는 lock prt가 가장 큰 순간이므로, 비교를 하지않고 넣어도됨.
    //thread에 lock 추가 
    struct list * locks = &thread_current()->locks;
@@ -290,9 +298,10 @@ lock_release (struct lock *lock) {
       peeked_lock = lock_peeker(curr->locks); //맨 앞 스레드의 값을 가져오고있음. 하지만 Lock이랑 맨 첫번째 값이랑 비교후 
       thread_try_donate_prt(peeked_lock->max_prt, curr); // 이 시점에서 lock의 prt가 바뀌면 안됨.
    }
+   
    intr_set_level(old_level);
    /********************************************/
-
+   
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
    thread_event();
@@ -394,42 +403,37 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 		cond_signal (cond, lock);
 }
 
-bool lock_checkup(struct thread* t, struct lock* l)
+bool lock_checkup(struct thread* t, struct lock* l,int flag)
 {
    ASSERT(intr_get_level() == INTR_OFF);
 
    struct thread* holder = l->holder;
-   set_wait_lock(t,l);
-
    int prt = thread_get_priority_any(t);
-   if( prt > l->max_prt ){ 
+
+   if(flag) // 첫 호출에 0으로 호출되어 sema down에서 lazy 하게삽입된다. 이를 위한 구별 플래그 
+      replace(&l->semaphore.waiters,&t->elem,priority_less_func);
+
+   l->max_prt = PRI_MIN;
+   if(!list_empty(&l->semaphore.waiters)){ // sema down에서 삽입하기때문에 하나도 없는 경우가 존재할 수 있다. 이후 수정예정. if문을 지워도 작동하도록
+      struct thread *peeked_thread = list_entry(list_front(&l->semaphore.waiters),struct thread,elem);
+      int peeked_prt = thread_get_priority_any(peeked_thread);
+      if(l->max_prt != peeked_prt)
+         l->max_prt = peeked_prt;
+   }
+   
+   if( prt >= l->max_prt ){ // lazy insert가 해결되면 ==로 교체해도 작동해야한다. 
       l->max_prt = prt;
-      if( it_is_thread(holder) && thread_try_donate_prt(prt, holder))
-      {
-         list_remove(&l->elem);
-         list_insert_ordered(&holder->locks,&l->elem,priority_less_func_lock,NULL);
-
-         (is_wait_lock(holder)) && lock_climbing(holder);
-      }
+      replace(&holder->locks,&l->elem,priority_less_func_lock);
+      thread_try_donate_prt(prt,holder)
+      &&is_wait_lock(holder) 
+      &&lock_checkup(holder,holder->wanted_lock,1);
    }
 }
-bool lock_climbing(struct thread *t)
-{  
-   if(!it_is_thread(t->wanted_lock->holder))
-      return ;
 
-   struct lock* wanted = t->wanted_lock;
-   struct list* waiters = &wanted->semaphore.waiters;
-   list_remove(&t->elem);
-   list_insert_ordered(waiters, &t->elem, priority_less_func, NULL );
-   int prt = thread_get_priority_any(list_entry(list_front(waiters), struct thread, elem));
-   if( prt > wanted->max_prt)
-   {
-      wanted->max_prt = prt;
-      if(thread_try_donate_prt(prt, wanted->holder)){
-         list_remove(&wanted->elem);
-         list_insert_ordered(&wanted->holder->locks, &wanted, priority_less_func_lock, NULL);
-         lock_climbing(wanted->holder);
-      }
-   }
+static void replace(struct list* l, struct list_elem *elem, list_less_func * less){ // elem을 list에 정렬 list_less_func 방식으로
+   list_remove(elem);
+   list_insert_ordered(l,elem,less,NULL);
 }
+
+
+

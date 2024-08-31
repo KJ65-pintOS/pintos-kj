@@ -176,7 +176,7 @@ void thread_wakeup(int64_t ticks);
 #define free_donated_prt(t) (t->cflag &= ~CFLAG_PRT_DONATED)
 
 #define is_wait_lock(t) (t->cflag & CFLAG_WAIT_LOCK)
-#define set_wait_lock(t,lock) ({t->cflag |= CFLAG_WAIT_LOCK; t->wanted_lock = &(lock);})
+#define set_wait_lock(t,lock) ({t->cflag |= CFLAG_WAIT_LOCK; t->wanted_lock = lock;})
 #define free_wait_lock(t) (t->cflag &= ~CFLAG_WAIT_LOCK)
 
 bool it_is_thread(struct thread* t);
