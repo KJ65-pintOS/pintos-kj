@@ -215,7 +215,7 @@ void priority_rec_update(struct lock* lock, int larger_prioty) {
 	struct thread* lock_holder = lock->holder;
 	if (lock_holder != NULL && get_any_priority(lock_holder) < larger_prioty) {
         lock_update(lock, larger_prioty);
-        locks_reorder(lock_holder, lock);
+        locks_reorder(lock, larger_prioty);
 		if (is_rec_update(lock, larger_prioty))
 			priority_rec_update(lock_holder->wanted_lock, larger_prioty);
 	}
