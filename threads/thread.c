@@ -436,6 +436,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->donated_priority = INIT_DNTD_PRI;
 	list_init(&(t->locks));
 	t->wanted_lock = NULL;
+	if (thread_mlfqs) {
+		t->priority = thread_get_priority();
+	}
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

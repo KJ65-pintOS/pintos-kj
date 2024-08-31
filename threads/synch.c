@@ -200,14 +200,18 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
-	thread_current()->wanted_lock = lock;
-	if (lock->max_priority < thread_get_priority()) 
-		priority_rec_update(lock, thread_get_priority());
+	if (!thread_mlfqs) {
+		thread_current()->wanted_lock = lock;
+		if (lock->max_priority < thread_get_priority()) 
+			priority_rec_update(lock, thread_get_priority());
+	}
 
 	sema_down (&lock->semaphore);
 	// sema down를 통과했다 == lock을 획득
-	list_insert_ordered(&thread_current()->locks, &lock->elem, priority_ascd_lock, NULL);
-	thread_current()->wanted_lock = NULL;
+	if (!thread_mlfqs) {
+		list_insert_ordered(&thread_current()->locks, &lock->elem, priority_ascd_lock, NULL);
+		thread_current()->wanted_lock = NULL;
+	}
 	lock->holder = thread_current ();
 }
 
@@ -270,14 +274,15 @@ void
 lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
-	list_remove(&lock->elem);
-	struct thread *lock_holder = lock->holder;
-	if (list_empty(&lock_holder->locks)) 
-		lock_holder->donated_priority = INIT_DNTD_PRI;	
-	else 
-		lock_holder->donated_priority = list_entry(list_front(&lock_holder->locks), struct lock, elem)->max_priority;
-	
-	lock->max_priority = INIT_DNTD_PRI;
+	if (!thread_mlfqs) {
+		list_remove(&lock->elem);
+		struct thread *lock_holder = lock->holder;
+		if (list_empty(&lock_holder->locks)) 
+			lock_holder->donated_priority = INIT_DNTD_PRI;	
+		else 
+			lock_holder->donated_priority = list_entry(list_front(&lock_holder->locks), struct lock, elem)->max_priority;
+		lock->max_priority = INIT_DNTD_PRI;
+	}
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
