@@ -103,6 +103,7 @@ sema_down (struct semaphore *sema) {
 
 	old_level = intr_disable ();
 	while (sema->value == 0) {
+      set_wait_sema(thread_current());
 		list_insert_ordered(&sema->waiters, &(thread_current()->elem), priority_less_func,NULL);
 		thread_block ();
 	}
@@ -147,12 +148,14 @@ sema_up (struct semaphore *sema) {
 
 	old_level = intr_disable ();
    
+   sema->value++;
 	if (!list_empty (&sema->waiters)){
       struct thread* poped_thread = list_entry (list_pop_front (&sema->waiters),struct thread, elem);
       list_remove(&poped_thread->elem);
 		thread_unblock (poped_thread);
+      
    }
-	sema->value++;
+   thread_event();
 	intr_set_level (old_level);
 }
 
@@ -304,7 +307,7 @@ lock_release (struct lock *lock) {
    
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
-   thread_event();
+   
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -424,6 +427,7 @@ bool lock_checkup(struct thread* t, struct lock* l,int flag)
    if( prt >= l->max_prt ){ // lazy insert가 해결되면 ==로 교체해도 작동해야한다. 
       l->max_prt = prt;
       replace(&holder->locks,&l->elem,priority_less_func_lock);
+      
       thread_try_donate_prt(prt,holder)
       &&is_wait_lock(holder) 
       &&lock_checkup(holder,holder->wanted_lock,1);

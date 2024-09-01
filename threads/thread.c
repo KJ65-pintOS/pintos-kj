@@ -63,7 +63,10 @@ is_priority_less_than_next(int64_t p);
 
 #define insert_ready(elem) (list_insert_ordered(&ready_list, &(elem), sort_by_prt_desc,NULL))
 
-
+//mlfqs
+static int mlfqs_set_prt(int nice);
+static ffloat mlfqs_set_load_avg(struct thread *t);
+static ffloat mlfqs_set_recent_cpu(struct thread *t);
 //**********************************************
 
 /* Scheduling. */
@@ -143,6 +146,9 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
+
+	// mlfqs
+	initial_thread->nice = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -234,7 +240,7 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
-	if(is_priority_less_than_next(thread_get_priority())) //todo thread_get_priority 로 바꾸어도 문제는 없을듯.
+	if(is_priority_less_than_next(thread_get_priority())) 
 		thread_yield();
 	return tid;
 }
@@ -364,7 +370,7 @@ thread_set_nice (int nice UNUSED) {
 int
 thread_get_nice (void) {
 	/* TODO: Your implementation goes here */
-	return 0;
+	return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
@@ -449,6 +455,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->sleep_time = 0;
 	t->cflag = 0;
 	t->wanted_lock = (void*)0;
+
+	if(thread_mlfqs){
+		t->nice = thread_get_nice(); // 상
+	}
 	list_init(&t->locks);
 }
 
@@ -736,3 +746,38 @@ sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *
   const struct thread *b = list_entry (b_, struct thread, elem);
   return thread_get_priority_any(a) > thread_get_priority_any(b);
 }
+
+/*****************************************************************/
+// mlfps
+
+// static int mlfqs_set_prt(int nice)
+// {
+// 	struct thread* t = thread_current();
+// 	ffloat avg,recent_cpu;
+// 	avg = mlfqs_set_load_avg(t);
+	
+// 	//priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+// 	t->priority = PRI_MAX - (t->recent_cpu / 4 ) - (t->nice * 2);
+// }	 
+
+// static ffloat mlfqs_set_load_avg(struct thread *t)
+// {
+// 	ffloat f1, f59, f60, avg;
+// 	f1 = convert_if(1);
+// 	f59 = convert_if(59);
+// 	f60 = convert_if(60);
+// 	//load_avg = (59/60) * load_avg + (1/60) * ready_threads
+// 	avg = add_ff(mul_ff( div_ff(f59,f60), avg ),mul_ff( div_ff(f1,f60), list_size(&ready_list) ));
+// 	return avg ;
+// }
+
+// static ffloat mlfqs_set_recent_cpu(struct thread *t)
+// {
+// 	ffloat avg = get_load_avg();
+
+// 	//recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
+// 	ffloat recent_cpu = mul_ff( div_ff(mul_fi(avg,2), add_fi(mul_fi(avg,2),1)), t->recent_cpu) + t->nice;
+// 	return recent_cpu;
+// }
+
+/*****************************************************************/
