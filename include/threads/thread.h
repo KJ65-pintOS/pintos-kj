@@ -99,6 +99,9 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 	struct list locks;
 	struct lock* wanted_lock;
+	/* MLFQS */
+	int recent_cpu; // Fixed Point type
+	int nice;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -156,5 +159,10 @@ void thread_awake(int64_t current_time);
 bool priority_less_func (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
 int get_any_priority(const struct thread *t);
 bool is_donated(const struct thread *t);
+void thread_event();
 
+/* MLFQS */
+void inc_recent_cpu();
+void recalibrate_scheduler_metricks();
+void thread_all_recalibrate(bool is_cal_recent_cpu);
 #endif /* threads/thread.h */

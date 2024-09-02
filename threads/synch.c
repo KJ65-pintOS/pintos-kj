@@ -123,6 +123,7 @@ sema_up (struct semaphore *sema) {
 		struct thread *highest_t = list_entry(highest, struct thread, elem);
 		list_remove(highest);
 		thread_unblock(highest_t);
+		thread_event();
 	}
 	intr_set_level (old_level);
 }

@@ -24,6 +24,26 @@
    Do not modify this value. */
 #define THREAD_BASIC 0xd42df210
 
+/* Fixed Point Real Arithmatic */
+#define F_BASE					(1<<14)
+#define INT_TO_FP(n)			((n) * (F_BASE))
+
+#define FP_TO_INT_ZERO(x) 		((x) / (F_BASE))
+#define FP_TO_INT_NEAR(x)		(((x) >= 0) ? (((x) + ((F_BASE) / 2)) / F_BASE) : (((x) - ((F_BASE) / 2)) / F_BASE))
+
+#define FP_ADD_FP(x, y)			((x) + (y))
+#define FP_SUB_FP(x, y)			((x) - (y))
+
+#define FP_ADD_INT(x, n)		(FP_ADD_FP(x, INT_TO_FP(n)))
+#define FP_SUB_INT(x, n)		(FP_SUB_FP(x, INT_TO_FP(n)))
+
+#define FP_MULT_FP(x, y) 		(((int64_t)(x)) * (y) / (F_BASE))
+#define FP_MULT_INT(x, n)		((x) * (n))
+
+#define FP_DIV_FP(x, y)			(((int64_t)(x)) * (F_BASE) / (y))
+#define FP_DIV_INT(x, n)		((x) / (n))
+
+
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -57,10 +77,19 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 bool priority_less_func (const struct list_elem *curr_, const struct list_elem *next_, void *aux UNUSED);
 bool priority_ascd_lock  (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
 
+/* MLFQS */
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+static int load_avg; // Fixed Point type
+int thread_get_ready_threads();
+void thread_cal_priority(struct thread *t);
+void cal_load_avg();
+void thread_cal_recent_cpu(struct thread *t); // Fixed Point type
+void thread_recalibrate(struct thread *t, bool is_cal_recent_cpu);
+
+void itr_list_cal_thread_metrics(struct list *list, bool is_cal_recent_cpu);
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -124,6 +153,11 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
+	if (thread_mlfqs) {
+		initial_thread->nice = 0;
+		initial_thread->recent_cpu = 0;
+		load_avg = 0;
+	}
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -212,11 +246,25 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
+	if (thread_mlfqs) {
+		// TODO: 초기값은 0, 나머지는 부모에게 상속 받은 값
+		t->nice = thread_current()->nice;
+		t->recent_cpu = thread_current()->recent_cpu;
+		// thread_cal_priority(t); // TODO: priority를 계산하지 않고 생성 시에는 최댓값을 줘야하는지 고려
+		t->priority = PRI_MAX;
+	}
 
 	/* Add to run queue. */
 	thread_unblock (t);
-
+	
+	thread_event();
 	return tid;
+}
+
+void thread_event() {
+	struct thread *front = list_entry(list_front(&ready_list), struct thread, elem);
+	if (thread_current() != idle_thread && thread_get_priority() < front->priority)
+		thread_yield();
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
@@ -252,9 +300,6 @@ thread_unblock (struct thread *t) {
 	list_insert_ordered (&ready_list, &t->elem, priority_less_func, NULL);
 
 	t->status = THREAD_READY;
-
-	if (thread_current() != idle_thread && thread_get_priority() < t->priority)
-		thread_yield();
 
 	intr_set_level (old_level);
 }
@@ -343,31 +388,133 @@ thread_get_priority (void) {
 	return get_any_priority(thread_current ());
 }
 
-/* Sets the current thread's nice value to NICE. */
+/* 
+	Sets the current thread's nice value to new nice and 
+		recalculates the thread's priority based on the new value (see Calculating Priority). 
+	If the running thread no longer has the highest priority, yields. 
+*/
 void
-thread_set_nice (int nice UNUSED) {
+thread_set_nice (int nice) {
 	/* TODO: Your implementation goes here */
+	thread_current()->nice = nice;
+	thread_cal_recent_cpu(thread_current());
+	thread_cal_priority(thread_current());
+	if (!list_empty(&ready_list)) {
+		struct thread *first = list_entry(list_begin(&ready_list), struct thread, elem);
+		if (first > thread_get_priority())
+			thread_yield();
+	}
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return FP_TO_INT_NEAR(FP_MULT_INT(load_avg, 100));
 }
 
-/* Returns 100 times the current thread's recent_cpu value. */
+void inc_recent_cpu() {
+	if (thread_current() != idle_thread) 
+		thread_current()->recent_cpu = FP_ADD_INT(thread_current()->recent_cpu,1);
+}
+
+/* Returns 100 times the current thread's recent cpu value, rounded to the nearest integer. */
 int
 thread_get_recent_cpu (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return FP_TO_INT_NEAR(FP_MULT_INT(thread_current()->recent_cpu, 100));
+}
+
+void thread_renew_all_priority() {
+	bool is_cal_recent_cpu = false;
+	thread_recalibrate(thread_current(), is_cal_recent_cpu);
+	/* waiting threads */
+	itr_list_cal_thread_metrics(&sleep_list, is_cal_recent_cpu);
+	/* ready threads */
+	itr_list_cal_thread_metrics(&ready_list, is_cal_recent_cpu);
+}
+
+void recalibrate_scheduler_metricks() {
+	/* cal order matters */
+	cal_load_avg();
+	thread_all_recalibrate(true);
+}
+
+void cal_load_avg() {
+	int quotient_load_avg = FP_DIV_FP(INT_TO_FP(59), INT_TO_FP(60));
+	int quotient_ready_threads = FP_DIV_FP(INT_TO_FP(1), INT_TO_FP(60));
+	load_avg = FP_ADD_FP(FP_MULT_FP(quotient_load_avg, load_avg), FP_MULT_INT(quotient_ready_threads, thread_get_ready_threads()));
+}
+
+int
+thread_get_ready_threads() {
+	if (thread_current() == idle_thread)
+		return list_size(&ready_list);
+	return 1 + list_size(&ready_list); // the numnber of running thread and ready threads
+}
+
+void thread_all_recalibrate(bool is_cal_recent_cpu) {
+	// 모든 쓰레드의 recent_cpu 재계산 하면서 priority도 재계산
+	/* running thread */
+	thread_recalibrate(thread_current(), is_cal_recent_cpu);
+	
+	/* waiting threads */
+	itr_list_cal_thread_metrics(&sleep_list, is_cal_recent_cpu);
+	// list_sort(&sleep_list, timer_less_func, NULL);
+	/* ready threads */
+	itr_list_cal_thread_metrics(&ready_list, is_cal_recent_cpu);
+	list_sort(&ready_list, priority_less_func, NULL);
+}
+
+void itr_list_cal_thread_metrics(struct list *list, bool is_cal_recent_cpu) {
+	if (list_empty(list))
+		return;
+	struct list_elem *cur_elem = list_begin(list);
+	struct thread *cur_t = list_entry(cur_elem, struct thread, elem);
+	while (is_thread(cur_t)) {
+		thread_recalibrate(cur_t, is_cal_recent_cpu);
+		cur_elem = list_next(cur_elem);
+		cur_t = list_entry(cur_elem, struct thread, elem);
+	}
+}
+
+
+void thread_recalibrate(struct thread *t, bool is_cal_recent_cpu) {
+	/* cal order matters */
+	if (is_cal_recent_cpu)
+		thread_cal_recent_cpu(t);
+	else
+		thread_cal_priority(t);
+}
+
+void thread_cal_recent_cpu(struct thread *t) {
+	int nice = t->nice;
+	int recent_cpu = t->recent_cpu; // Fixed Point type
+
+	int term1 = FP_MULT_INT(load_avg, 2);
+	int result = FP_DIV_FP(term1, FP_ADD_INT(term1, 1));
+	result = FP_MULT_FP(result, recent_cpu);
+	result = FP_ADD_INT(result, nice);
+	t->recent_cpu = result;
+}
+
+void thread_cal_priority(struct thread *t) {
+	int nice = t->nice;
+	int recent_cpu = t->recent_cpu; // Fixed Point type
+	
+	int term1 = FP_DIV_INT(recent_cpu, 4);
+	int priority = FP_SUB_FP(INT_TO_FP(PRI_MAX), term1);
+	priority = FP_SUB_FP(priority, INT_TO_FP(2 * nice));
+	priority = FP_TO_INT_ZERO(priority);
+	if (priority < PRI_MIN)
+		priority = PRI_MIN;
+	if (priority > PRI_MAX)
+		priority = PRI_MAX;
+	t->priority = priority; // 버림으로 int 저장
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -436,9 +583,6 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->donated_priority = INIT_DNTD_PRI;
 	list_init(&(t->locks));
 	t->wanted_lock = NULL;
-	if (thread_mlfqs) {
-		t->priority = thread_get_priority();
-	}
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

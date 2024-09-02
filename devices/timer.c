@@ -131,6 +131,13 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	// if (ticks % 4 == 0)
+	if (thread_mlfqs) {
+		inc_recent_cpu();
+		if (ticks % 100 == 0)
+			recalibrate_scheduler_metricks();
+		else if (ticks % 4) 
+			thread_all_recalibrate(false); // 모든거 priority 갱신
+	}
 	thread_awake(ticks);
 	thread_tick ();
 }
