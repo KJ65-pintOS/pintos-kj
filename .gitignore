@@ -1,3 +1,10 @@
+*.dsk
+*.bin
+*.output
+*.errors
+/threads/build/tests
+.vscode
+
 # Prerequisites
 *.d
 
