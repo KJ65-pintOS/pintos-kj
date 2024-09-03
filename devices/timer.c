@@ -133,8 +133,10 @@ timer_interrupt (struct intr_frame *args UNUSED) {
 	// if (ticks % 4 == 0)
 	if (thread_mlfqs) {
 		inc_recent_cpu();
-		if (ticks % 100 == 0)
-			recalibrate_scheduler_metricks();
+		if (ticks % 100 == 0) {
+			cal_load_avg();
+			thread_all_recalibrate(true);
+		}			
 		else if (ticks % 4) 
 			thread_all_recalibrate(false); // 모든거 priority 갱신
 	}

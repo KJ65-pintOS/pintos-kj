@@ -164,5 +164,6 @@ void thread_event();
 /* MLFQS */
 void inc_recent_cpu();
 void recalibrate_scheduler_metricks();
+void cal_load_avg();
 void thread_all_recalibrate(bool is_cal_recent_cpu);
 #endif /* threads/thread.h */

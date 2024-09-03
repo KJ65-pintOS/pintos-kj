@@ -420,22 +420,13 @@ thread_get_load_avg (void) {
 
 void inc_recent_cpu() {
 	if (thread_current() != idle_thread) 
-		thread_current()->recent_cpu = FP_ADD_INT(thread_current()->recent_cpu,1);
+		thread_current()->recent_cpu = FP_ADD_INT(thread_current()->recent_cpu, 1);
 }
 
 /* Returns 100 times the current thread's recent cpu value, rounded to the nearest integer. */
 int
 thread_get_recent_cpu (void) {
 	return FP_TO_INT_NEAR(FP_MULT_INT(thread_current()->recent_cpu, 100));
-}
-
-void thread_renew_all_priority() {
-	bool is_cal_recent_cpu = false;
-	thread_recalibrate(thread_current(), is_cal_recent_cpu);
-	/* waiting threads */
-	itr_list_cal_thread_metrics(&sleep_list, is_cal_recent_cpu);
-	/* ready threads */
-	itr_list_cal_thread_metrics(&ready_list, is_cal_recent_cpu);
 }
 
 void recalibrate_scheduler_metricks() {
@@ -460,11 +451,14 @@ thread_get_ready_threads() {
 void thread_all_recalibrate(bool is_cal_recent_cpu) {
 	// 모든 쓰레드의 recent_cpu 재계산 하면서 priority도 재계산
 	/* running thread */
-	thread_recalibrate(thread_current(), is_cal_recent_cpu);
+	if (is_cal_recent_cpu) 
+		thread_cal_recent_cpu(thread_current());
+	else
+		thread_cal_priority(thread_current());
 	
 	/* waiting threads */
 	itr_list_cal_thread_metrics(&sleep_list, is_cal_recent_cpu);
-	// list_sort(&sleep_list, timer_less_func, NULL);
+	list_sort(&sleep_list, timer_less_func, NULL);
 	/* ready threads */
 	itr_list_cal_thread_metrics(&ready_list, is_cal_recent_cpu);
 	list_sort(&ready_list, priority_less_func, NULL);
@@ -476,19 +470,13 @@ void itr_list_cal_thread_metrics(struct list *list, bool is_cal_recent_cpu) {
 	struct list_elem *cur_elem = list_begin(list);
 	struct thread *cur_t = list_entry(cur_elem, struct thread, elem);
 	while (is_thread(cur_t)) {
-		thread_recalibrate(cur_t, is_cal_recent_cpu);
+		if (is_cal_recent_cpu) 
+			thread_cal_recent_cpu(cur_t);
+		else
+			thread_cal_priority(cur_t);
 		cur_elem = list_next(cur_elem);
 		cur_t = list_entry(cur_elem, struct thread, elem);
 	}
-}
-
-
-void thread_recalibrate(struct thread *t, bool is_cal_recent_cpu) {
-	/* cal order matters */
-	if (is_cal_recent_cpu)
-		thread_cal_recent_cpu(t);
-	else
-		thread_cal_priority(t);
 }
 
 void thread_cal_recent_cpu(struct thread *t) {
@@ -780,9 +768,7 @@ bool is_donated(const struct thread *t) {
 bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
 	const struct thread *a = list_entry (a_, struct thread, elem);
 	const struct thread *b = list_entry (b_, struct thread, elem);
-	if (a->priority == b->priority)
-		return a->sleep_time < b->sleep_time;
-	return a->priority > b->priority;
+	return a->sleep_time < b->sleep_time;
 };
 
 void thread_sleep(int64_t sleep_time) { // sleep_time = current_time + ticks
