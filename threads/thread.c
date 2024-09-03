@@ -45,32 +45,38 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
-
-static ffloat load_avg; 		/* mlfqs */
-static struct list mlfqs_all_thread;
-//**********************************************
-// custom define 
+/* custom define */
+/**********************************************/
+/* alarm clock, project 1 */
 
 static struct list waiting_list;
-
 static bool
-sort_by_prtAndSleep_desc (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
+sort_by_sleeptime_asc (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
+
+/* alarm clock, project 1 */
+/**********************************************/
+/* priority scheduling, project 1 */
 
 static bool
 sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) ;
-
-static int 
+static bool 
 is_priority_less_than_next(int64_t p);
-
 #define thread_entry(list_elem) (list_entry(list_elem, struct thread, elem))
-
 #define insert_ready(elem) (list_insert_ordered(&ready_list, &(elem), sort_by_prt_desc,NULL))
 
-//**********************************************
-//mlfqs
+/* priority scheduling, project 1 */
+/**********************************************/
+/* advanced scheduling, project 1 */
+
+static ffloat load_avg; 		
+static struct list mlfqs_all_thread;
+
 static int mlfqs_reset_prt();
 static void mlfqs_task();
-//**********************************************
+static void mlfqs_recalibrate(struct list * l);
+
+/* advanced scheduling, project 1 */
+/**********************************************/
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -89,14 +95,10 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
-static void mlfqs_recalibrate(struct list * l);
+
+
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
-bool it_is_thread(struct thread* t)
-{
-	return is_thread(t);
-}
-
 /* Returns the running thread.
  * Read the CPU's stack pointer `rsp', and then round that
  * down to the start of a page.  Since `struct thread' is
@@ -358,7 +360,7 @@ thread_yield (void) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
-	ASSERT (!intr_context ());// it has to be internel interrupt
+	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
@@ -666,9 +668,9 @@ allocate_tid (void) {
 }
 
 
-
+/* custom  function */
 /***************************************************************/
-// custom public function. all in here are public method
+/* alarm clock, project 1 */
 
 void 
 thread_sleep(int64_t ticks)
@@ -682,7 +684,7 @@ thread_sleep(int64_t ticks)
 
 	old_level = intr_disable ();
 	curr->sleep_time = ticks;
-	list_insert_ordered(&waiting_list,&(curr->elem),sort_by_prtAndSleep_desc,NULL);
+	list_insert_ordered(&waiting_list,&(curr->elem),sort_by_sleeptime_asc,NULL);
 	thread_block();
 	intr_set_level (old_level);
 }
@@ -695,6 +697,19 @@ thread_wakeup(int64_t ticks)
 		thread_unblock(list_entry(list_pop_front(&waiting_list),struct thread, elem));
 	
 }
+
+static bool
+sort_by_sleeptime_asc(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) 
+{
+  const struct thread *a = list_entry (a_, struct thread, elem);
+  const struct thread *b = list_entry (b_, struct thread, elem);
+  return a->sleep_time < b-> sleep_time;
+}
+
+
+/* alarm clock, project 1 */
+/***************************************************************/
+/* priority scheduling, project 1 */
 
 
 bool // thread t에게 현재 스레드의 prt 기부를 시도함.
@@ -725,6 +740,7 @@ thread_event()
 		thread_yield();
 }
 
+
 int
 thread_get_priority_any(struct thread* t)
 {	
@@ -733,24 +749,9 @@ thread_get_priority_any(struct thread* t)
 }
 
 
-/***************************************************************/
-// custom static function. all in here are static method
-
-
-
-/* Returns true if value A is less than value B, false
-   otherwise. */
-static bool
-sort_by_prtAndSleep_desc(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) 
-{
-  const struct thread *a = list_entry (a_, struct thread, elem);
-  const struct thread *b = list_entry (b_, struct thread, elem);
-  return a->sleep_time < b-> sleep_time;
-}
-
 /* Compare 'p'(p should be priority of some thread) 
    with ready_list thread. */
-static int 
+static bool 
 is_priority_less_than_next(int64_t p)
 {
 	if(list_empty(&ready_list))
@@ -758,6 +759,7 @@ is_priority_less_than_next(int64_t p)
 	struct thread *front = thread_entry(list_front(&ready_list));
 	return (p <= thread_get_priority_any(front));
 }
+
 
 // Todo 이후에 bit mask 추가해서 insert_by_prt 와 통합
 static bool
@@ -768,8 +770,13 @@ sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *
   return thread_get_priority_any(a) > thread_get_priority_any(b);
 }
 
-/*****************************************************************/
-// mlfps
+
+/* priority scheduling, project 1 */
+/***************************************************************/
+/* advanced scheduling, project 1 */
+
+
+
 static int mlfqs_reset_prt()
 {	
 	struct thread* t = thread_current();
@@ -785,8 +792,9 @@ static int mlfqs_reset_prt()
 	mlfqs_recalibrate(&waiting_list);
 
 	list_sort(&ready_list, sort_by_prt_desc, NULL);
-	// list_sort(&waiting_list, sort_by_prtAndSleep_desc,NULL);
 }
+
+
 static void mlfqs_recalibrate(struct list * l)
 {
 	struct thread* t;
@@ -803,6 +811,7 @@ static void mlfqs_recalibrate(struct list * l)
 		}
 	}
 }
+
 
 static void mlfqs_task()
 {	
@@ -845,4 +854,5 @@ static void mlfqs_task()
 }
 
 
+/* advanced scheduling, project 1 */
 /*****************************************************************/
