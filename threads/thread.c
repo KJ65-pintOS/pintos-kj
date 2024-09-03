@@ -257,11 +257,11 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 	
-	thread_event();
+	thread_comp_priority();
 	return tid;
 }
 
-void thread_event() {
+void thread_comp_priority() {
 	struct thread *front = list_entry(list_front(&ready_list), struct thread, elem);
 	if (thread_current() != idle_thread && thread_get_priority() < front->priority)
 		thread_yield();
@@ -782,7 +782,8 @@ void thread_sleep(int64_t sleep_time) { // sleep_time = current_time + ticks
 }
 
 void thread_awake(int64_t current_time) {
-	while (!list_empty(&sleep_list) && list_entry(list_front(&sleep_list), struct thread, elem)->sleep_time <= current_time) {
+	while (!list_empty(&sleep_list) && 
+			list_entry(list_front(&sleep_list), struct thread, elem)->sleep_time <= current_time) {
 		struct thread *awaken = list_entry(list_pop_front(&sleep_list), struct thread, elem);
 		thread_unblock(awaken);
 	}

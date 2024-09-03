@@ -159,7 +159,7 @@ void thread_awake(int64_t current_time);
 bool priority_less_func (const struct list_elem *cur_, const struct list_elem *next_, void *aux UNUSED);
 int get_any_priority(const struct thread *t);
 bool is_donated(const struct thread *t);
-void thread_event();
+void thread_comp_priority();
 
 /* MLFQS */
 void inc_recent_cpu();
