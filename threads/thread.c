@@ -45,6 +45,9 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
+
+static ffloat load_avg; 		/* mlfqs */
+static struct list mlfqs_all_thread;
 //**********************************************
 // custom define 
 
@@ -63,10 +66,10 @@ is_priority_less_than_next(int64_t p);
 
 #define insert_ready(elem) (list_insert_ordered(&ready_list, &(elem), sort_by_prt_desc,NULL))
 
+//**********************************************
 //mlfqs
-static int mlfqs_set_prt(int nice);
-static ffloat mlfqs_set_load_avg(struct thread *t);
-static ffloat mlfqs_set_recent_cpu(struct thread *t);
+static int mlfqs_reset_prt();
+static void mlfqs_task();
 //**********************************************
 
 /* Scheduling. */
@@ -86,7 +89,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
-
+static void mlfqs_recalibrate(struct list * l);
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 bool it_is_thread(struct thread* t)
@@ -143,12 +146,20 @@ thread_init (void) {
 	
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
+
+
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
 
-	// mlfqs
-	initial_thread->nice = 0;
+	if(thread_mlfqs)
+	{
+		// mlfqs
+		initial_thread->nice = 0;
+		initial_thread->recent_cpu = 0;
+		load_avg = 0;
+		list_init(&mlfqs_all_thread);
+	}
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -180,12 +191,20 @@ thread_tick (void) {
 	else if (t->pml4 != NULL)
 		user_ticks++;
 #endif
-	else
+	else{
 		kernel_ticks++;
-
+		if(thread_mlfqs)
+			t->recent_cpu = add_fi(t->recent_cpu,1);
+			
+	}
+	if(thread_mlfqs && ((idle_ticks+kernel_ticks) % 100 == 0))
+		mlfqs_task();
 	/* Enforce preemption. */
-	if (++thread_ticks >= TIME_SLICE)
-		intr_yield_on_return ();
+	if (++thread_ticks >= TIME_SLICE){
+		if( thread_mlfqs )
+			mlfqs_reset_prt();
+		intr_yield_on_return();
+	}
 }
 
 /* Prints thread statistics. */
@@ -237,6 +256,11 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
+
+	if(thread_mlfqs){
+		t->nice = thread_get_nice(); // 상속
+		t->recent_cpu = thread_current()->recent_cpu;
+	}
 
 	/* Add to run queue. */
 	thread_unblock (t);
@@ -357,13 +381,14 @@ int
 thread_get_priority (void) {
 	struct thread* t = thread_current();
 	return ( is_prt_donated(t)? t->donated_priority : t->priority);
-	//return thread_get_priority_any(thread_current());
 }
 
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) {
 	/* TODO: Your implementation goes here */
+	thread_current()->nice = nice;
+	// mlfqs_reset_prt();
 }
 
 /* Returns the current thread's nice value. */
@@ -377,14 +402,14 @@ thread_get_nice (void) {
 int
 thread_get_load_avg (void) {
 	/* TODO: Your implementation goes here */
-	return 0;
+	return convert_fi(mul_fi(load_avg,100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	
+	return convert_fi_near(mul_fi(thread_current()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -456,9 +481,6 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->cflag = 0;
 	t->wanted_lock = (void*)0;
 
-	if(thread_mlfqs){
-		t->nice = thread_get_nice(); // 상
-	}
 	list_init(&t->locks);
 }
 
@@ -671,6 +693,7 @@ thread_wakeup(int64_t ticks)
 {
 	while(!list_empty(&waiting_list) && (list_entry(list_front(&waiting_list), struct thread, elem))->sleep_time <= ticks )
 		thread_unblock(list_entry(list_pop_front(&waiting_list),struct thread, elem));
+	
 }
 
 
@@ -722,9 +745,7 @@ sort_by_prtAndSleep_desc(const struct list_elem *a_, const struct list_elem *b_,
 {
   const struct thread *a = list_entry (a_, struct thread, elem);
   const struct thread *b = list_entry (b_, struct thread, elem);
-  if( a->priority == b->priority)
-  	return a->sleep_time < b-> sleep_time;
-  return a->priority > b->priority;
+  return a->sleep_time < b-> sleep_time;
 }
 
 /* Compare 'p'(p should be priority of some thread) 
@@ -735,7 +756,7 @@ is_priority_less_than_next(int64_t p)
 	if(list_empty(&ready_list))
 		return false;
 	struct thread *front = thread_entry(list_front(&ready_list));
-	return (p < thread_get_priority_any(front));
+	return (p <= thread_get_priority_any(front));
 }
 
 // Todo 이후에 bit mask 추가해서 insert_by_prt 와 통합
@@ -749,35 +770,79 @@ sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *
 
 /*****************************************************************/
 // mlfps
+static int mlfqs_reset_prt()
+{	
+	struct thread* t = thread_current();
+	//priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
 
-// static int mlfqs_set_prt(int nice)
-// {
-// 	struct thread* t = thread_current();
-// 	ffloat avg,recent_cpu;
-// 	avg = mlfqs_set_load_avg(t);
+	t->priority = PRI_MAX - convert_fi(add_ff(div_fi(t->recent_cpu, 4),convert_if(t->nice * 2)));  
+	if(t->priority < PRI_MIN )
+		t->priority = PRI_MIN;
+	else if(t->priority > PRI_MAX)
+		t->priority = PRI_MAX;
+
+	mlfqs_recalibrate(&ready_list);
+	mlfqs_recalibrate(&waiting_list);
+
+	list_sort(&ready_list, sort_by_prt_desc, NULL);
+	// list_sort(&waiting_list, sort_by_prtAndSleep_desc,NULL);
+}
+static void mlfqs_recalibrate(struct list * l)
+{
+	struct thread* t;
+	if(!list_empty(l)){ //waiting list 변경
+		t = list_entry(list_front(l), struct thread, elem);
+		while(is_thread(t))
+		{	
+			t->priority = PRI_MAX - convert_fi(add_ff(div_fi(t->recent_cpu, 4),convert_if(t->nice * 2)));  
+			if(t->priority < PRI_MIN )
+				t->priority = PRI_MIN;
+			else if(t->priority > PRI_MAX)
+				t->priority = PRI_MAX;
+			t = list_entry(list_next(&t->elem),struct thread, elem);
+		}
+	}
+}
+
+static void mlfqs_task()
+{	
+	/* this function has to be called every 100 ticks */
+	ffloat f1, f59, f60;
+	struct thread* t;
+
+	// ASSERT(!intr_context());
 	
-// 	//priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
-// 	t->priority = PRI_MAX - (t->recent_cpu / 4 ) - (t->nice * 2);
-// }	 
+	
+	f1 = convert_if(1);
+	f59 = convert_if(59);
+	f60 = convert_if(60);
 
-// static ffloat mlfqs_set_load_avg(struct thread *t)
-// {
-// 	ffloat f1, f59, f60, avg;
-// 	f1 = convert_if(1);
-// 	f59 = convert_if(59);
-// 	f60 = convert_if(60);
-// 	//load_avg = (59/60) * load_avg + (1/60) * ready_threads
-// 	avg = add_ff(mul_ff( div_ff(f59,f60), avg ),mul_ff( div_ff(f1,f60), list_size(&ready_list) ));
-// 	return avg ;
-// }
+	//load_avg = (59/60) * load_avg + (1/60) * ready_threads
+	t = thread_current();
+	int size = (idle_thread == t) ? list_size(&ready_list) : list_size(&ready_list)+1;
+	load_avg = add_ff(mul_ff( div_ff(f59,f60), load_avg ),mul_fi( div_ff(f1,f60), size));
+	
+	//recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
+	
+	t->recent_cpu = add_fi(mul_ff( div_ff(mul_fi(load_avg,2), add_fi(mul_fi(load_avg,2),1)), t->recent_cpu), t->nice); //반올림
+	
+	if(!list_empty(&ready_list)){ // ready list 변경
+		t = list_entry(list_front(&ready_list), struct thread, elem);
+		while(is_thread(t))
+		{	
+			t->recent_cpu = add_fi(mul_ff( div_ff(mul_fi(load_avg,2), add_fi(mul_fi(load_avg,2),1)), t->recent_cpu), t->nice);
+			t = list_entry(list_next(&t->elem),struct thread, elem);
+		}
+	}
+	if(!list_empty(&waiting_list)){ //waiting list 변경
+		t = list_entry(list_front(&waiting_list), struct thread, elem);
+		while(is_thread(t))
+		{	
+			t->recent_cpu = add_fi(mul_ff( div_ff(mul_fi(load_avg,2), add_fi(mul_fi(load_avg,2),1)), t->recent_cpu), t->nice);
+			t = list_entry(list_next(&t->elem),struct thread, elem);
+		}
+	}
+}
 
-// static ffloat mlfqs_set_recent_cpu(struct thread *t)
-// {
-// 	ffloat avg = get_load_avg();
-
-// 	//recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
-// 	ffloat recent_cpu = mul_ff( div_ff(mul_fi(avg,2), add_fi(mul_fi(avg,2),1)), t->recent_cpu) + t->nice;
-// 	return recent_cpu;
-// }
 
 /*****************************************************************/

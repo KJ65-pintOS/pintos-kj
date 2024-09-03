@@ -106,7 +106,8 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 
 	int32_t nice; 
-	uint32_t recent_cpu;
+	int32_t recent_cpu;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -194,16 +195,25 @@ int
 thread_get_priority_any(struct thread* t);
 //***************************************************
 typedef int ffloat;
+
 #define fbase (1<<14)
-#define add_ff(x,y) (x + y) //둘다 실수 
-#define add_fi(x,y) (x + y * fbase)
-#define sub_ff(x,y) (x - y)
-#define sub_fi(x,n) (x - n * fbase) // x는 실수 , y는 정수 
-#define mul_ff(x,y) (((int64_t)x) * (y) / fbase)
-#define mul_fi(x,n) (x * n)
-#define convert_if(n) (n * fbase)
-#define convert_fi(x) (x / fbase)
-#define div_ff(x,y) (((int64_t)x) * fbase / (y))
-#define div_fi(x,n) (x / n)
+
+#define convert_if(n) ((n) * fbase)
+#define convert_fi(x) ((x) / fbase)
+#define convert_fi_near(x) ( (x)>0 ? ((x) + fbase / 2) / fbase : ((x) - fbase / 2) / fbase )
+
+#define add_ff(x,y) ((x) + (y)) //둘다 실수 
+#define add_fi(x,y) ((x) + (y) * fbase)
+
+#define sub_ff(x,y) ((x) - (y))
+#define sub_fi(x,n) ((x) - (n) * fbase) // x는 실수 , y는 정수 
+
+
+#define mul_fi(x,n) ((x) * (n))
+#define mul_ff(x,y) (((int64_t)(x)) * (y) / fbase)
+
+
+#define div_fi(x,n) ((x) / (n))
+#define div_ff(x,y) (((int64_t)(x)) * fbase / (y))
 
 #endif /* threads/thread.h */
