@@ -92,9 +92,45 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	/* custom */
+	/**********************************/
+	/* alarm clock, project 1 */
+
+	int64_t sleep_time;
+
+	/* alarm clock, project 1*/
+	/**********************************/
+	/* priority scheduling, project 1 */
+
+	int donated_priority;
+	
+
+	uint8_t padding_1;
+	uint8_t cflag;
+	uint8_t padding_2;
+	
+	struct list locks; 
+	struct lock* wanted_lock;
+
+	/* priority scheduling, project 1 */
+	/**********************************/
+	/* mlfqs scheduling, project 1*/
+
+	uint8_t padding_3;
+
+	int32_t nice; 
+	int32_t recent_cpu;
+
+	uint8_t padding_4;
+
+	/* mlfqs scheduling, project 1*/
+	/**********************************/
+	/* custom */
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -112,6 +148,7 @@ struct thread {
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
+
 extern bool thread_mlfqs;
 
 void thread_init (void);
@@ -142,5 +179,68 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+/* custom */
+/***************************************************/
+/* alarm clock , project 1 */
+
+void thread_sleep(int64_t ticks);
+
+void thread_wakeup(int64_t ticks);
+
+/* alarm clock , project 1 */
+/***************************************************/
+/* priority scheduling , project 1*/
+
+#define CFLAG_PRT_DONATED 0x1
+#define CFLAG_WAIT_LOCK 0x2
+
+#define is_prt_donated(t) (t->cflag & CFLAG_PRT_DONATED)
+#define set_donated_prt(t,p) ({t->cflag |= CFLAG_PRT_DONATED; t->donated_priority = p;})
+#define free_donated_prt(t) (t->cflag &= ~CFLAG_PRT_DONATED)
+
+#define is_wait_lock(t) (t->cflag & CFLAG_WAIT_LOCK)
+#define set_wait_lock(t,lock) ({t->cflag |= CFLAG_WAIT_LOCK; t->wanted_lock = lock;})
+#define set_wait_sema(t) (t->cflag |= CFLAG_WAIT_LOCK)
+#define free_wait_lock(t) (t->cflag &= ~CFLAG_WAIT_LOCK)
+
+bool // thread t에게 현재 스레드의 prt 기부를 시도함.
+thread_try_donate_prt(int given_prt, struct thread* to);
+
+void 
+thread_event(void);
+
+int
+thread_get_priority_any(const struct thread* t);
+
+/* priority scheduling , project 1 */
+/***************************************************/
+/* mlfqs scheduling, project 1 */
+
+typedef int ffloat;
+
+#define fbase (1<<14)
+
+#define convert_if(n) ((n) * fbase)
+#define convert_fi(x) ((x) / fbase)
+#define convert_fi_near(x) ( (x)>0 ? ((x) + fbase / 2) / fbase : ((x) - fbase / 2) / fbase )
+
+#define add_ff(x,y) ((x) + (y)) //둘다 실수 
+#define add_fi(x,y) ((x) + (y) * fbase)
+
+#define sub_ff(x,y) ((x) - (y))
+#define sub_fi(x,n) ((x) - (n) * fbase) // x는 실수 , y는 정수 
+
+
+#define mul_fi(x,n) ((x) * (n))
+#define mul_ff(x,y) (((int64_t)(x)) * (y) / fbase)
+
+
+#define div_fi(x,n) ((x) / (n))
+#define div_ff(x,y) (((int64_t)(x)) * fbase / (y))
+
+/* mlfqs scheduling, project 1 */
+/***************************************************/
+/* custom */
 
 #endif /* threads/thread.h */

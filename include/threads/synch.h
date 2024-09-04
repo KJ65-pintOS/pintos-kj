@@ -20,6 +20,16 @@ void sema_self_test (void);
 struct lock {
 	struct thread *holder;      /* Thread holding lock (for debugging). */
 	struct semaphore semaphore; /* Binary semaphore controlling access. */
+
+	/*********************************/
+	/* priority scheduling, project 1*/
+
+	int max_prt;
+
+	/* priority scheduling, project 1*/
+	/*********************************/
+
+	struct list_elem elem;
 };
 
 void lock_init (struct lock *);
@@ -33,6 +43,20 @@ struct condition {
 	struct list waiters;        /* List of waiting threads. */
 };
 
+/* One semaphore in a list. */
+struct semaphore_elem {
+	struct list_elem elem;              /* List element. */
+	struct semaphore semaphore;         /* This semaphore. */
+
+	/*********************************/
+	/* priority scheduling, project 1*/
+	
+    int max_prt;
+	
+	/* priority scheduling, project 1*/
+	/*********************************/
+};
+
 void cond_init (struct condition *);
 void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
@@ -44,5 +68,11 @@ void cond_broadcast (struct condition *, struct lock *);
  * optimization barrier.  See "Optimization Barriers" in the
  * reference guide for more information.*/
 #define barrier() asm volatile ("" : : : "memory")
+
+/***********************************/
+/* custom */
+
+
+/***********************************/
 
 #endif /* threads/synch.h */
