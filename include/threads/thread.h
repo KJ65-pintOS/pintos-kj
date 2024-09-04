@@ -116,12 +116,12 @@ struct thread {
 	/**********************************/
 	/* mlfqs scheduling, project 1*/
 
-	uint8_t padding_1;
+	uint8_t padding_3;
 
 	int32_t nice; 
 	int32_t recent_cpu;
 
-	uint8_t padding_2;
+	uint8_t padding_4;
 
 	/* mlfqs scheduling, project 1*/
 	/**********************************/
@@ -208,10 +208,10 @@ bool // thread t에게 현재 스레드의 prt 기부를 시도함.
 thread_try_donate_prt(int given_prt, struct thread* to);
 
 void 
-thread_event();
+thread_event(void);
 
 int
-thread_get_priority_any(struct thread* t);
+thread_get_priority_any(const struct thread* t);
 
 /* priority scheduling , project 1 */
 /***************************************************/
