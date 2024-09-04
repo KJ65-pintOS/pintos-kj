@@ -36,7 +36,7 @@
 /***************************************/
 /* priority scheduling, project 1 */
 
-void
+static void
 lock_checkup(struct thread* t, struct lock* l);
 
 static bool
@@ -295,7 +295,7 @@ lock_held_by_current_thread (const struct lock *lock) {
 
 	return lock->holder == thread_current ();
 }
-
+
 
 
 /* Initializes condition variable COND.  A condition variable
@@ -389,7 +389,7 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 /***************************************************************************/
 /* priority scheduling, project 1 */
 
-void
+static void
 lock_checkup(struct thread* t, struct lock* l)
 {
    struct thread* holder;
@@ -405,7 +405,6 @@ lock_checkup(struct thread* t, struct lock* l)
          &&is_wait_lock(holder) )
          lock_checkup(holder,holder->wanted_lock);
    }
-   return true;
 }
 
 

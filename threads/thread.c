@@ -67,13 +67,19 @@ is_priority_less_than_next(int64_t p);
 /* priority scheduling, project 1 */
 /**********************************************/
 /* advanced scheduling, project 1 */
+typedef void calculation(struct thread* t);
 
 static ffloat load_avg; 		
 static struct list mlfqs_all_thread;
 
-static int mlfqs_reset_prt();
-static void mlfqs_task();
-static void mlfqs_recalibrate(struct list * l);
+static void mlfqs_reset_prt(void);
+static void mlfqs_task(void);
+// static void mlfqs_recalibrate(struct list * l);
+
+static void linear_traversal(struct list* l, calculation* func);
+static void mlfqs_set_load_avg(void);
+static void mlfqs_set_priority(struct thread* t);
+static void mlfqs_set_recent_cpu(struct thread* t);
 
 /* advanced scheduling, project 1 */
 /**********************************************/
@@ -734,7 +740,7 @@ thread_try_donate_prt(int given_prt, struct thread* to)
 
 
 void 
-thread_event()
+thread_event(void)
 {
 	if(is_priority_less_than_next(thread_get_priority()))
 		thread_yield();
@@ -742,7 +748,7 @@ thread_event()
 
 
 int
-thread_get_priority_any(struct thread* t)
+thread_get_priority_any(const struct thread* t)
 {	
 	uint8_t test = is_prt_donated(t);
 	return (test ? t->donated_priority : t->priority);
@@ -777,80 +783,82 @@ sort_by_prt_desc (const struct list_elem *a_, const struct list_elem *b_, void *
 
 
 
-static int mlfqs_reset_prt()
+static void 
+mlfqs_reset_prt(void)
 {	
-	struct thread* t = thread_current();
-	//priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+	mlfqs_set_priority(thread_current());
+	linear_traversal(&ready_list, mlfqs_set_priority);
+	linear_traversal(&waiting_list, mlfqs_set_priority);
+	list_sort(&ready_list, sort_by_prt_desc, NULL);
+}
 
+
+
+static void 
+mlfqs_task(void)
+{	
+	mlfqs_set_load_avg();
+	mlfqs_set_recent_cpu(thread_current());
+	linear_traversal(&ready_list, mlfqs_set_recent_cpu);
+	linear_traversal(&waiting_list, mlfqs_set_recent_cpu);
+}
+
+
+static void 
+linear_traversal(struct list* l, calculation* func)
+{	
+	struct thread * t;
+	if(!list_empty(l)){
+		t = list_entry(list_front(l), struct thread, elem);
+		while(is_thread(t))
+		{	
+			func(t);
+			t = list_entry(list_next(&t->elem),struct thread, elem);
+		}
+	}
+}
+
+
+static void 
+mlfqs_set_load_avg(void)
+{
+	ffloat f1, f59, f60;
+	int size;
+
+	ASSERT(intr_get_level() == INTR_OFF);
+
+	f1 = convert_if(1);
+	f59 = convert_if(59);
+	f60 = convert_if(60);
+
+	size = (idle_thread == thread_current()) ? list_size(&ready_list) : list_size(&ready_list)+1;
+
+	/* load_avg = (59/60) * load_avg + (1/60) * ready_threads */
+	load_avg = add_ff(mul_ff( div_ff(f59,f60), load_avg ),mul_fi( div_ff(f1,f60), size));
+}
+
+
+static void 
+mlfqs_set_recent_cpu(struct thread* t)
+{
+	ASSERT(intr_get_level() == INTR_OFF);
+
+	/* recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice */
+	t->recent_cpu = add_fi(mul_ff( div_ff(mul_fi(load_avg,2), add_fi(mul_fi(load_avg,2),1)), t->recent_cpu), t->nice);
+}
+
+
+static void 
+mlfqs_set_priority(struct thread* t)
+{	
+	ASSERT(intr_get_level() == INTR_OFF);
+
+	/* priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) */
 	t->priority = PRI_MAX - convert_fi(add_ff(div_fi(t->recent_cpu, 4),convert_if(t->nice * 2)));  
 	if(t->priority < PRI_MIN )
 		t->priority = PRI_MIN;
 	else if(t->priority > PRI_MAX)
 		t->priority = PRI_MAX;
-
-	mlfqs_recalibrate(&ready_list);
-	mlfqs_recalibrate(&waiting_list);
-
-	list_sort(&ready_list, sort_by_prt_desc, NULL);
-}
-
-
-static void mlfqs_recalibrate(struct list * l)
-{
-	struct thread* t;
-	if(!list_empty(l)){ //waiting list 변경
-		t = list_entry(list_front(l), struct thread, elem);
-		while(is_thread(t))
-		{	
-			t->priority = PRI_MAX - convert_fi(add_ff(div_fi(t->recent_cpu, 4),convert_if(t->nice * 2)));  
-			if(t->priority < PRI_MIN )
-				t->priority = PRI_MIN;
-			else if(t->priority > PRI_MAX)
-				t->priority = PRI_MAX;
-			t = list_entry(list_next(&t->elem),struct thread, elem);
-		}
-	}
-}
-
-
-static void mlfqs_task()
-{	
-	/* this function has to be called every 100 ticks */
-	ffloat f1, f59, f60;
-	struct thread* t;
-
-	// ASSERT(!intr_context());
-	
-	
-	f1 = convert_if(1);
-	f59 = convert_if(59);
-	f60 = convert_if(60);
-
-	//load_avg = (59/60) * load_avg + (1/60) * ready_threads
-	t = thread_current();
-	int size = (idle_thread == t) ? list_size(&ready_list) : list_size(&ready_list)+1;
-	load_avg = add_ff(mul_ff( div_ff(f59,f60), load_avg ),mul_fi( div_ff(f1,f60), size));
-	
-	//recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
-	
-	t->recent_cpu = add_fi(mul_ff( div_ff(mul_fi(load_avg,2), add_fi(mul_fi(load_avg,2),1)), t->recent_cpu), t->nice); //반올림
-	
-	if(!list_empty(&ready_list)){ // ready list 변경
-		t = list_entry(list_front(&ready_list), struct thread, elem);
-		while(is_thread(t))
-		{	
-			t->recent_cpu = add_fi(mul_ff( div_ff(mul_fi(load_avg,2), add_fi(mul_fi(load_avg,2),1)), t->recent_cpu), t->nice);
-			t = list_entry(list_next(&t->elem),struct thread, elem);
-		}
-	}
-	if(!list_empty(&waiting_list)){ //waiting list 변경
-		t = list_entry(list_front(&waiting_list), struct thread, elem);
-		while(is_thread(t))
-		{	
-			t->recent_cpu = add_fi(mul_ff( div_ff(mul_fi(load_avg,2), add_fi(mul_fi(load_avg,2),1)), t->recent_cpu), t->nice);
-			t = list_entry(list_next(&t->elem),struct thread, elem);
-		}
-	}
 }
 
 
