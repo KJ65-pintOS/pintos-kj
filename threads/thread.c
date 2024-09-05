@@ -741,9 +741,14 @@ thread_try_donate_prt(int given_prt, struct thread* to)
 
 void 
 thread_event(void)
-{
+{	
+
 	if(is_priority_less_than_next(thread_get_priority()))
-		thread_yield();
+		/* 외부 인터럽트 단계에서 실행시 yield on return 만 켜기. */
+		if(intr_context()) 
+			intr_yield_on_return();
+		else
+			thread_yield();
 }
 
 
