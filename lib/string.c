@@ -345,3 +345,31 @@ strlcat (char *dst, const char *src, size_t size) {
 	return src_len + dst_len;
 }
 
+/* Customs */
+char* remove_extra_spaces(char* str) {
+    if (str == NULL) return NULL;
+
+    size_t len = strlen(str);
+    size_t read = 0, write = 0;
+    int space_found = 0;
+
+    while (read < len) {
+        if (str[read] != ' ') {
+            str[write++] = str[read];
+            space_found = 0;
+        } else if (!space_found) {
+            str[write++] = ' ';
+            space_found = 1;
+        }
+        read++;
+    }
+
+    // 문자열 끝에 공백이 있다면 제거
+    if (write > 0 && str[write - 1] == ' ') {
+        write--;
+    }
+
+    str[write] = '\0';  // 새로운 문자열의 끝을 표시
+
+    return str;
+}
