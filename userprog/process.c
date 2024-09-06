@@ -22,10 +22,18 @@
 #include "vm/vm.h"
 #endif
 
+/* single word (4) or double word (8) alignment */
+#define ALIGNMENT 8
+
+/* rounds up to the nearest multiple of ALIGNMENT */
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
+
+
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
+void setup_arguments(const char *file_name, struct intr_frame *if_);
 
 /* General process initializer for initd and other process. */
 static void
@@ -98,11 +106,12 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
+	// 어떤 API를 써야 할까?
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
-
+	// 새로운 자식 페이지의 메모리에 부모의 페이지를 어떻게 복사할까?
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
@@ -116,6 +125,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  * Hint) parent->tf does not hold the userland context of the process.
  *       That is, you are required to pass second argument of process_fork to
  *       this function. */
+/* TODO: parent and child must start with the same physical memory */
 static void
 __do_fork (void *aux) {
 	struct intr_frame if_;
@@ -148,7 +158,7 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
-
+	// Parent inherits file resources (e.g., opened file descriptor) to child
 	process_init ();
 
 	/* Finally, switch to the newly created process. */
@@ -158,6 +168,7 @@ error:
 	thread_exit ();
 }
 
+// TODO: Assignment 1. Setup the argument for user program in process_exec() -> load() 편집해야 함!
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
@@ -185,7 +196,15 @@ process_exec (void *f_name) {
 		return -1;
 
 	/* Start switched process. */
-	do_iret (&_if);
+	/*
+		- pintos 코드는 당연하지만 kernel mode
+		- intr_frame _if는 process의 권한을 설정함(kernel read/write, user read/write 여부 등)
+		- thread에서도 쓰였던 do_iret은 새로운 register를 밀어버려서 바로 새로운 실행흐름을 실행시킴
+		  (process_exec == process 실행 == switch kernel mode to user mode)
+		- user process로 실행흐름이 옮겨간 뒤 모든 user process실행 뒤에는 exit() system call로 process는 종료됨
+		- 따라서 아래 부분 NOT_READCHED는 절대 실행되서는 안되는 거임
+	*/ 
+	do_iret (&_if); 
 	NOT_REACHED ();
 }
 
@@ -204,6 +223,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	// thread_block();
 	return -1;
 }
 
@@ -334,6 +354,17 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (t->pml4 == NULL)
 		goto done;
 	process_activate (thread_current ());
+	/* TODO 1: file_name을 쪼개줘야 함 
+		- string.c의 strtok_r()함수 사용
+		- 반드시 Calling convention(ABI)를 지켜야 한다
+			- rsi -> addr of argv[0] 
+			- rdi -> argc
+		- rip -> user process entry point addr
+	*/
+	// travers string and set argc
+	char *space_ptr = strchr(file_name, " ");
+	if (space_ptr != NULL)
+		*space_ptr = '\0';
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
@@ -416,13 +447,42 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
+	if (space_ptr != NULL)
+		*space_ptr = ' ';
+	setup_arguments(file_name, if_);
 	success = true;
 
 done:
 	/* We arrive here whether the load is successful or not. */
 	file_close (file);
 	return success;
+}
+
+void setup_arguments(const char *file_name, struct intr_frame *if_) {
+	char * trimmed_arg = remove_extra_spaces(file_name);
+	size_t len_arg = strlen(trimmed_arg) + 1;
+
+	if_->rsp -= len_arg; // 1 for null terminator
+	// char *cur_user_stack_p = USER_STACK - len_arg; // for test
+	strlcpy(if_->rsp, trimmed_arg, len_arg); // need to check if_->rsp == '\0'
+
+	char *token, *save_ptr, *argv;
+	int argc = 0;
+	for (token = strtok_r(if_->rsp, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+		argc++;
+		strlcat(argv, &token, ALIGNMENT);
+	}
+
+	int align_size = ALIGN(len_arg) - len_arg;
+	if_->rsp -= align_size;
+	memset(if_->rsp, 0, align_size + ALIGNMENT); // argv 마지막 원소까지 0으로 set
+
+	if_->rsp -= sizeof(char *) * argc;
+	strlcpy(if_->rsp, argv, strlen(argv));
+	
+	// set return addr to zero
+	char *return_addr_ptr = if_->rsp + ALIGNMENT;
+	memset(return_addr_ptr, 0, ALIGNMENT);
 }
 
 
