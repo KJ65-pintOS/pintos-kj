@@ -27,6 +27,13 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
+/***********************************************************************/
+
+static void setup_argument(struct intr_frame* if_, const char* file_name);
+static void remove_extra_spaces(char *str);
+
+/***********************************************************************/
+
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
@@ -65,7 +72,6 @@ initd (void *f_name) {
 #endif
 
 	process_init ();
-
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -329,6 +335,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;
 	int i;
 
+	/*****************************************************************/
+	//todo filename 의 값이 제대로 복사되지 않고 있음. strcpy등으로 복사해서 저장하자.
+	char* argv;
+	argv = strchr(file_name,' '); //file name 뒤를 짜름.
+	if(argv != NULL)
+		*argv = '\0';
+
+	/*****************************************************************/
+
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
@@ -341,7 +356,6 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
-
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -353,6 +367,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: error loading executable\n", file_name);
 		goto done;
 	}
+
 
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
@@ -411,12 +426,22 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (!setup_stack (if_))
 		goto done;
 
+	/*****************************************************************/
+	/* Set up arguments */
+	if(argv != NULL)
+		*argv = ' ';
+	setup_argument(if_, file_name);
+
+
+	/*****************************************************************/
+
+
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
+	
 	success = true;
 
 done:
@@ -424,8 +449,64 @@ done:
 	file_close (file);
 	return success;
 }
+static void setup_argument(struct intr_frame* if_, const char* file_name)
+{	
+	char *token, *save_ptr, *argv;
+	int cnt, argv_size;
+	size_t tmp_len;
 
+	remove_extra_spaces(file_name); //const라서 오류 뜰수도 있음. 문자열 전처리, 여러개의 공백을 하나로 만들어줌 
+	
+	argv_size = strlen(file_name) + 1;
 
+	if_->rsp -= argv_size;
+
+	memcpy(if_->rsp, file_name, argv_size);
+
+	if( argv_size % 8 != 0)
+	{	
+		int size = 8 - argv_size % 8 ;
+		if_->rsp -= size;
+		memcpy(if_->rsp, (void*)0, size);
+	}
+
+	*argv = '\0';
+	for(token = strtok_r(if_->rsp, ' ', &save_ptr); token != NULL; 
+		token = strtok_r(NULL,' ', &save_ptr))
+	{	
+		strlcat(argv, (char*)&token, 8);
+	}
+	
+	if_->rsp -= strlen(argv);
+	memcpy(if_->rsp, argv, strlen(argv));
+}
+static void remove_extra_spaces(char *str) {
+    int i = 0, j = 0;
+    int space_flag = 0;
+    
+    while (str[i] != '\0') {
+        // 현재 문자가 공백(' ')일 경우
+        if (str[i] == ' ') {
+            if (!space_flag) {
+                // 공백이 처음 나타나면 공백을 복사
+                str[j++] = ' ';
+                space_flag = 1;
+            }
+        } else {
+            // 공백이 아닌 문자가 나오면 플래그를 초기화하고 문자 복사
+            str[j++] = str[i];
+            space_flag = 0;
+        }
+        i++;
+    }
+    
+    // 마지막에 남은 공백 제거
+    if (j > 0 && str[j-1] == ' ') {
+        j--;
+    }
+    
+    str[j] = '\0'; // 최종 문자열 종료
+}
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
 static bool
