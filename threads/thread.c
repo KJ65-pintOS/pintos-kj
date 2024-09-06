@@ -742,8 +742,12 @@ thread_try_donate_prt(int given_prt, struct thread* to)
 void 
 thread_event(void)
 {
-	if(is_priority_less_than_next(thread_get_priority()))
-		thread_yield();
+	if(is_priority_less_than_next(thread_get_priority())) {
+		if (intr_context())
+			intr_yield_on_return();
+		else
+			thread_yield();
+	}
 }
 
 
