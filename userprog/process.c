@@ -29,8 +29,11 @@ static void __do_fork (void *);
 
 /***********************************************************************/
 
+#define ALIGNMENT sizeof(char *)
+
 static void setup_argument(struct intr_frame* if_, const char* file_name);
 static void remove_extra_spaces(char *str);
+
 
 /***********************************************************************/
 
@@ -316,6 +319,8 @@ struct ELF64_PHDR {
 #define ELF ELF64_hdr
 #define Phdr ELF64_PHDR
 
+#define USERPROG
+
 static bool setup_stack (struct intr_frame *if_);
 static bool validate_segment (const struct Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
@@ -455,30 +460,38 @@ static void setup_argument(struct intr_frame* if_, const char* file_name)
 	int cnt, argv_size;
 	size_t tmp_len;
 
-	remove_extra_spaces(file_name); //const라서 오류 뜰수도 있음. 문자열 전처리, 여러개의 공백을 하나로 만들어줌 
+	remove_extra_spaces(file_name);  
 	
 	argv_size = strlen(file_name) + 1;
-
 	if_->rsp -= argv_size;
-
 	memcpy(if_->rsp, file_name, argv_size);
 
-	if( argv_size % 8 != 0)
+	*argv = '\0';
+	for(token = strtok_r(if_->rsp, " " , &save_ptr); token != NULL; 
+		token = strtok_r(NULL," ", &save_ptr))
 	{	
-		int size = 8 - argv_size % 8 ;
-		if_->rsp -= size;
-		memcpy(if_->rsp, (void*)0, size);
+		printf("test %s",token);
+		strlcat(argv, &token, ALIGNMENT);
 	}
 
-	*argv = '\0';
-	for(token = strtok_r(if_->rsp, ' ', &save_ptr); token != NULL; 
-		token = strtok_r(NULL,' ', &save_ptr))
+	if( argv_size % ALIGNMENT != 0)
 	{	
-		strlcat(argv, (char*)&token, 8);
+		int size = ALIGNMENT - argv_size % ALIGNMENT ;
+		if_->rsp -= size;
+		memset(if_->rsp, 0, size);
 	}
-	
+
+	//마지막 argv flag 설정
+	if_->rsp -= ALIGNMENT; 
+	memset(if_->rsp, 0, ALIGNMENT);
+
+	// argv memcpy
 	if_->rsp -= strlen(argv);
 	memcpy(if_->rsp, argv, strlen(argv));
+
+	// return address 설정
+	if_->rsp -= ALIGNMENT;
+	memset(if_->rsp, 0, ALIGNMENT);
 }
 static void remove_extra_spaces(char *str) {
     int i = 0, j = 0;
