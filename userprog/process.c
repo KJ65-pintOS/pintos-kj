@@ -213,6 +213,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	while(1);
 	return -1;
 }
 
@@ -224,6 +225,8 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
+
+	//printf ("%s: exit(%d)\n", ...);
 
 	process_cleanup ();
 }
@@ -456,22 +459,24 @@ done:
 }
 static void setup_argument(struct intr_frame* if_, const char* file_name)
 {	
-	char *token, *save_ptr, *argv;
-	int cnt, argv_size;
+	char *token, *save_ptr, *argv[64];
+	uint32_t argv_size;
+	uint64_t argc = 0; 
 	size_t tmp_len;
-
+	
 	remove_extra_spaces(file_name);  
 	
 	argv_size = strlen(file_name) + 1;
 	if_->rsp -= argv_size;
 	memcpy(if_->rsp, file_name, argv_size);
 
-	*argv = '\0';
+	argv[0] = '\0';
 	for(token = strtok_r(if_->rsp, " " , &save_ptr); token != NULL; 
 		token = strtok_r(NULL," ", &save_ptr))
 	{	
 		printf("test %s",token);
-		strlcat(argv, &token, ALIGNMENT);
+		argv[argc] = token;
+		argc++;
 	}
 
 	if( argv_size % ALIGNMENT != 0)
@@ -482,16 +487,21 @@ static void setup_argument(struct intr_frame* if_, const char* file_name)
 	}
 
 	//마지막 argv flag 설정
+	
 	if_->rsp -= ALIGNMENT; 
 	memset(if_->rsp, 0, ALIGNMENT);
 
 	// argv memcpy
-	if_->rsp -= strlen(argv);
-	memcpy(if_->rsp, argv, strlen(argv));
+	if_->rsp -= argc * ALIGNMENT;
+	memcpy(if_->rsp, argv, (argc) * ALIGNMENT);
+	
+	if_->R.rsi = if_->rsp;
+	if_->R.rdi = argc;
 
 	// return address 설정
 	if_->rsp -= ALIGNMENT;
 	memset(if_->rsp, 0, ALIGNMENT);
+
 }
 static void remove_extra_spaces(char *str) {
     int i = 0, j = 0;

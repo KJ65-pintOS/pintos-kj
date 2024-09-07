@@ -11,6 +11,24 @@
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
+/************************************************************************/
+/* syscall, project 2  */
+
+typedef void syscall_handler_func(struct intr_frame *);
+static syscall_handler_func *syscall_handlers[25]; // 25는 총 syscall 갯수;
+
+static void  
+write_handler(struct intr_frame* f);
+
+static void 
+wait_handler(struct intr_frame* f);
+
+static void 
+exit_handler(struct intr_frame* f);
+
+/* syscall, project 2 */
+/************************************************************************/
+
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -35,12 +53,60 @@ syscall_init (void) {
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+	
+
+	syscall_handlers[SYS_WAIT] = wait_handler;
+	syscall_handlers[SYS_WRITE] = write_handler; 
+	syscall_handlers[SYS_EXIT] = exit_handler;
 }
 
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-	printf ("system call!\n");
-	thread_exit ();
+
+	syscall_handler_func *handler;
+
+	int sys_num = f->R.rax;
+	handler = syscall_handlers[sys_num];
+	handler(f);
+
+	//printf ("system call!\n");
+	//thread_exit ();
+}
+
+
+
+static void  
+write_handler(struct intr_frame* f)
+{	
+	int fd;
+	void* buffer;
+	unsigned size;
+
+	fd = f->R.rdi;
+	buffer = f->R.rsi;
+	size = f->R.rdx;
+
+	if(fd == STDOUT_FILENO)	
+		putbuf(buffer,size);
+}
+
+static void 
+wait_handler(struct intr_frame* f)
+{
+	int pid;
+
+	pid = f->R.rdi;
+	
+}
+
+
+static void 
+exit_handler(struct intr_frame* f)
+{
+	int status;
+
+	status = f->R.rdi;
+	//process_wait
 }
