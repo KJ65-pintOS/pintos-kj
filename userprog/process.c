@@ -18,12 +18,13 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
 
 /* single word (4) or double word (8) alignment */
-#define ALIGNMENT 8
+#define ALIGNMENT sizeof(char *)
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -71,11 +72,15 @@ initd (void *f_name) {
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
-
+	
 	process_init ();
+	// struct semaphore *exe_sema;
+	// sema_init(&exe_sema, 1);
 
+	// sema_down(exe_sema);
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
+	// sema_up(exe_sema);
 	NOT_REACHED ();
 }
 
@@ -224,6 +229,7 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
 	// thread_block();
+	while (1);
 	return -1;
 }
 
@@ -235,7 +241,7 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
+	// printf ("%s: exit(%d)\n", ); // process name & exit code
 	process_cleanup ();
 }
 
@@ -362,7 +368,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		- rip -> user process entry point addr
 	*/
 	// travers string and set argc
-	char *space_ptr = strchr(file_name, " ");
+	char *space_ptr = strchr(file_name, ' ');
 	if (space_ptr != NULL)
 		*space_ptr = '\0';
 
@@ -460,29 +466,28 @@ done:
 
 void setup_arguments(const char *file_name, struct intr_frame *if_) {
 	char * trimmed_arg = remove_extra_spaces(file_name);
-	size_t len_arg = strlen(trimmed_arg) + 1;
+	size_t arg_size_with_null = strlen(trimmed_arg) + 1; // 1 for null terminator
 
-	if_->rsp -= len_arg; // 1 for null terminator
-	// char *cur_user_stack_p = USER_STACK - len_arg; // for test
-	strlcpy(if_->rsp, trimmed_arg, len_arg); // need to check if_->rsp == '\0'
+	if_->rsp -= arg_size_with_null;
+	strlcpy(if_->rsp, trimmed_arg, arg_size_with_null);
 
-	char *token, *save_ptr, *argv;
-	int argc = 0;
-	for (token = strtok_r(if_->rsp, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
-		argc++;
-		strlcat(argv, &token, ALIGNMENT);
-	}
+	char *token, *save_ptr, *argv[64];
+	uint64_t argc = 0;
+	for (token = strtok_r(if_->rsp, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) 
+		argv[argc++] = token;
+	
+	int pad_align_and_argv_null = (ALIGN(arg_size_with_null) - arg_size_with_null) + ALIGNMENT;
+	if_->rsp -= (pad_align_and_argv_null);
+	memset(if_->rsp, 0, pad_align_and_argv_null); // argv 마지막 원소까지 0으로 set
 
-	int align_size = ALIGN(len_arg) - len_arg;
-	if_->rsp -= align_size;
-	memset(if_->rsp, 0, align_size + ALIGNMENT); // argv 마지막 원소까지 0으로 set
-
-	if_->rsp -= sizeof(char *) * argc;
-	strlcpy(if_->rsp, argv, strlen(argv));
+	if_->rsp -= ALIGNMENT * argc;
+	if_->R.rsi = if_->rsp;
+	memcpy(if_->rsp, argv, ALIGNMENT * argc);
 	
 	// set return addr to zero
-	char *return_addr_ptr = if_->rsp + ALIGNMENT;
-	memset(return_addr_ptr, 0, ALIGNMENT);
+	if_->rsp -= ALIGNMENT;
+	memset(if_->rsp, 0, ALIGNMENT);
+	if_->R.rdi = argc;
 }
 
 
