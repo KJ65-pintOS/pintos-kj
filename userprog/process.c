@@ -213,7 +213,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	while(1);
+	//while(1);
 	return -1;
 }
 
@@ -226,7 +226,7 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	//printf ("%s: exit(%d)\n", ...);
+	printf ("%s: exit(%d)\n",curr->name ,curr->tf.R.rax);
 
 	process_cleanup ();
 }
@@ -470,11 +470,9 @@ static void setup_argument(struct intr_frame* if_, const char* file_name)
 	if_->rsp -= argv_size;
 	memcpy(if_->rsp, file_name, argv_size);
 
-	argv[0] = '\0';
 	for(token = strtok_r(if_->rsp, " " , &save_ptr); token != NULL; 
 		token = strtok_r(NULL," ", &save_ptr))
 	{	
-		printf("test %s",token);
 		argv[argc] = token;
 		argc++;
 	}

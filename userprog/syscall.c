@@ -98,6 +98,8 @@ wait_handler(struct intr_frame* f)
 	int pid;
 
 	pid = f->R.rdi;
+	//pid가 유효한지 체크
+
 	
 }
 
@@ -106,7 +108,7 @@ static void
 exit_handler(struct intr_frame* f)
 {
 	int status;
-
 	status = f->R.rdi;
-	//process_wait
+	f->R.rax = status;
+	thread_exit();
 }
