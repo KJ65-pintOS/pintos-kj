@@ -276,6 +276,10 @@ process_activate (struct thread *next) {
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
+
+//custom
+#define ALIGNMENT 8
+
 /* Executable header.  See [ELF1] 1-4 to 1-8.
  * This appears at the very beginning of an ELF binary. */
 struct ELF64_hdr {
@@ -328,7 +332,12 @@ load (const char *file_name, struct intr_frame *if_) {
 	off_t file_ofs;
 	bool success = false;
 	int i;
-
+	//custom
+	char *argv;
+	
+	if (argv = strchr(file_name, ' ') != NULL)
+		*argv = '\0'
+		
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
@@ -411,6 +420,11 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (!setup_stack (if_))
 		goto done;
 
+	if (argv != NULL) {
+		*argv = ' ';
+		setup_argument (if_, file_name);
+	}
+
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
 
@@ -425,7 +439,78 @@ done:
 	return success;
 }
 
+// file_name이 wild하니 띄어쓰기가 몇개가 들어올지 모르므로 세개든 두개든 한개로 만들어주는 함수
+char* remove_extra_spaces(char* str) {
+    if (str == NULL) return NULL;
 
+    size_t len = strlen(str);
+    size_t read = 0, write = 0;
+    int space_found = 0;
+
+    while (read < len) {
+        if (str[read] != ' ') {
+            str[write++] = str[read];
+            space_found = 0;
+        } else if (!space_found) {
+            str[write++] = ' ';
+            space_found = 1;
+        }
+        read++;
+    }
+
+    // 문자열 끝에 공백이 있다면 제거
+    if (write > 0 && str[write - 1] == ' ') {
+        write--;
+    }
+
+    str[write] = '\0';  // 새로운 문자열의 끝을 표시
+
+    return str;
+}
+//무슨 구조체인지 알리기
+static void
+setup_argument(struct intr_frame *if_, const char *file_name) {
+	char *token, *save_ptr, *argv;
+	uint32_t argv_size;
+	uint64_t *argc;
+	size_t tmp_len;
+
+	remove_extra_spaces(file_name);
+
+	argv_size = strlen(file_name) + 1;
+	if_ -> rsp = argv_size;
+	memcpy(if_ -> rsp, file_name, argv_size);
+
+	*argv = '\0';
+	for (token = strtok_r(if_ -> rsp, " ", &save_ptr); token != NULL;
+		token = strtok_r(NULL, " ", &save_ptr))
+		{
+			// printf("test %s", token);
+			strlcat(argv, &token, ALIGNMENT);
+			argc++;
+		}
+
+		if (argv_size % ALIGNMENT != 0) {
+			int size = ALIGNMENT - argv_size % ALIGNMENT;
+			if_ -> rsp -= size;
+			memset(if_ -> rsp, 0, size);
+		}
+
+		//마지막 argv flag 설정
+		if_ -> rsp -= ALIGNMENT;
+		memset(if_ -> rsp, 0, ALIGNMENT);
+
+		//argv memcpy
+		if_ -> rsp -= strlen(argv);
+		memcpy(if_ -> rsp, argv, strlen(argv));
+
+		if_ -> R.rsi = if_ -> rsp;
+		if_ -> R.rdi = argc;
+
+		// return address 설정
+		if_ -> rsp -= ALIGNMENT;
+		memset(if_ -> rsp, 0, ALIGNMENT);
+}
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
 static bool

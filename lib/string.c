@@ -99,7 +99,10 @@ memchr (const void *block_, int ch_, size_t size) {
 /* Finds and returns the first occurrence of C in STRING, or a
    null pointer if C does not appear in STRING.  If C == '\0'
    then returns a pointer to the null terminator at the end of
-   STRING. */
+   STRING. (STRING에서 문자 C가 처음으로 나타나는 위치를 찾아
+   반환하거나, C가 STRING에 없으면 NULL 포인터를 반환한다.
+   C가 '\0'이면 STRING의 끝에 있는 NULL 종료 문자의 포인터를
+   반환한다.)*/
 char *
 strchr (const char *string, int c_) {
 	char c = c_;
