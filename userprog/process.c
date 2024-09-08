@@ -203,7 +203,9 @@ int
 process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
-	 * XXX:       implementing the process_wait. */
+	 * XXX:       implementing the process_wait. 
+	 * (pintos가 process_wait(initd)를 종료하면 process_wait를 구현하기 전에
+	 * 여기에 무한 루프를 추가하는 것이 좋다.)*/
 	return -1;
 }
 
@@ -214,7 +216,10 @@ process_exit (void) {
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+	 * TODO: We recommend you to implement process resource cleanup here. 
+	 * (코드는 여기에 있다.
+	 * 프로세스 종료 메시지 구현(project2/process_termination.html 참조
+	 * 여기에서 프로세스 리소스 정리를 구현하는 것이 좋다.))*/
 
 	process_cleanup ();
 }
@@ -333,10 +338,11 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;
 	int i;
 	//custom
-	char *argv;
+	char* argv;
 	
-	if (argv = strchr(file_name, ' ') != NULL)
-		*argv = '\0'
+	argv = strchr(file_name, ' ');
+	if (argv != NULL)
+		*argv = '\0';
 		
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
@@ -467,12 +473,12 @@ char* remove_extra_spaces(char* str) {
 
     return str;
 }
-//무슨 구조체인지 알리기
-static void
-setup_argument(struct intr_frame *if_, const char *file_name) {
-	char *token, *save_ptr, *argv;
+//
+void setup_argument(struct intr_frame *if_, const char *file_name) 
+{
+	char *token, *save_ptr, *argv[64];
 	uint32_t argv_size;
-	uint64_t *argc;
+	uint64_t argc = 0;
 	size_t tmp_len;
 
 	remove_extra_spaces(file_name);
@@ -481,35 +487,36 @@ setup_argument(struct intr_frame *if_, const char *file_name) {
 	if_ -> rsp = argv_size;
 	memcpy(if_ -> rsp, file_name, argv_size);
 
-	*argv = '\0';
+	// *argv[0] = '\0';
+	// strtok_r을 사용하면 token에 어떻게 들어가는지 ?
 	for (token = strtok_r(if_ -> rsp, " ", &save_ptr); token != NULL;
 		token = strtok_r(NULL, " ", &save_ptr))
-		{
-			// printf("test %s", token);
-			strlcat(argv, &token, ALIGNMENT);
-			argc++;
-		}
+	{
+		// printf("test %s", token);
+		argv[argc] = token;
+		argc++;
+	}
 
-		if (argv_size % ALIGNMENT != 0) {
-			int size = ALIGNMENT - argv_size % ALIGNMENT;
-			if_ -> rsp -= size;
-			memset(if_ -> rsp, 0, size);
-		}
+	if (argv_size % ALIGNMENT != 0) {
+		int size = ALIGNMENT - argv_size % ALIGNMENT;
+		if_ -> rsp -= size;
+		memset(if_ -> rsp, 0, size);
+	}
 
-		//마지막 argv flag 설정
-		if_ -> rsp -= ALIGNMENT;
-		memset(if_ -> rsp, 0, ALIGNMENT);
+	//마지막 argv flag 설정
+	if_ -> rsp -= ALIGNMENT;
+	memset(if_ -> rsp, 0, ALIGNMENT);
 
-		//argv memcpy
-		if_ -> rsp -= strlen(argv);
-		memcpy(if_ -> rsp, argv, strlen(argv));
+	//argv memcpy
+	if_ -> rsp -= argc * ALIGNMENT;
+	memcpy(if_ -> rsp, argv, (argc) * ALIGNMENT);
 
-		if_ -> R.rsi = if_ -> rsp;
-		if_ -> R.rdi = argc;
+	if_ -> R.rsi = if_ -> rsp;
+	if_ -> R.rdi = argc;
 
-		// return address 설정
-		if_ -> rsp -= ALIGNMENT;
-		memset(if_ -> rsp, 0, ALIGNMENT);
+	// return address 설정
+	if_ -> rsp -= ALIGNMENT;
+	memset(if_ -> rsp, 0, ALIGNMENT);
 }
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
