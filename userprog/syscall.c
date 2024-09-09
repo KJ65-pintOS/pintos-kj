@@ -228,12 +228,12 @@ filesize_handler(struct intr_frame* f)
 }
 
 static void  
-write_handler(struct intr_frame* f)
+write_handler(struct intr_frame* f) // 핸들러를 실행하는 주체는 kernel 모드로 전환한 user prog이다.
 {
 	int fd;
 	void* buffer;
 	unsigned size;
-
+	struct thread* t = thread_current();
 	fd = f->R.rdi;
 	buffer = f->R.rsi;
 	size = f->R.rdx;
