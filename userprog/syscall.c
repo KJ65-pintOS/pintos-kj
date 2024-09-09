@@ -8,23 +8,68 @@
 #include "threads/flags.h"
 #include "intrinsic.h"
 
+//#include "init.h"
+
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
 /************************************************************************/
 /* syscall, project 2  */
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "string.h"
+#include "threads/malloc.h"
 
-typedef void syscall_handler_func(struct intr_frame *);
-static syscall_handler_func *syscall_handlers[25]; // 25는 총 syscall 갯수;
+typedef void 
+syscall_handler_func(struct intr_frame *);
 
-static void  
-write_handler(struct intr_frame* f);
+static syscall_handler_func 
+*syscall_handlers[25]; // 25는 총 syscall 갯수;
+
+
+static void
+halt_handler(struct intr_frame *f);
+
+static void 
+exit_handler(struct intr_frame* f);
+
+static void 
+fork_handler(struct intr_frame* f);
+
+static void
+exec_handler(struct intr_frame* f);
 
 static void 
 wait_handler(struct intr_frame* f);
 
+static void
+create_handler(struct intr_frame* f);
+
+static void
+remove_hander(struct intr_frame* f);
+
+static void
+read_handler(struct intr_frame* f);
+
 static void 
-exit_handler(struct intr_frame* f);
+open_handler(struct intr_frame *f);
+
+static void 
+filesize_handler(struct intr_frame* f);
+
+static void  
+write_handler(struct intr_frame* f);
+
+static void
+seek_handler(struct intr_frame* f);
+
+static void
+tell_handler(struct intr_frame* f);
+
+static void
+close_handler(struct intr_frame* f);
+
+
 
 /* syscall, project 2 */
 /************************************************************************/
@@ -54,10 +99,32 @@ syscall_init (void) {
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 	
+	/***********************************************/
+	/* syscall, project 2 */
 
-	syscall_handlers[SYS_WAIT] = wait_handler;
-	syscall_handlers[SYS_WRITE] = write_handler; 
+	// memset(fd_list, 0, sizeof(fd_list)); // fd 초기화
+	
+
+	memset(syscall_handlers, 0 , sizeof(syscall_handlers)); // sycall 함수배열 초기화
+
+	syscall_handlers[SYS_HALT] = halt_handler;
 	syscall_handlers[SYS_EXIT] = exit_handler;
+	syscall_handlers[SYS_FORK] = fork_handler;
+	syscall_handlers[SYS_EXEC] =exec_handler;
+	syscall_handlers[SYS_WAIT] = wait_handler;
+	syscall_handlers[SYS_CREATE] = create_handler;
+	syscall_handlers[SYS_REMOVE] = remove_hander;
+	syscall_handlers[SYS_READ] = read_handler;
+	syscall_handlers[SYS_OPEN] = open_handler;
+	syscall_handlers[SYS_FILESIZE] = filesize_handler;
+	syscall_handlers[SYS_WRITE] = write_handler; 
+	syscall_handlers[SYS_SEEK] = seek_handler;
+	syscall_handlers[SYS_TELL] = tell_handler;
+	syscall_handlers[SYS_CLOSE] = close_handler;
+
+
+	//syscall_hadnlers[SYS_FILESIZE] = 
+	/***********************************************/
 }
 
 /* The main system call interface */
@@ -65,21 +132,104 @@ void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
 
-	syscall_handler_func *handler;
+	/****************************************/
+	/* syscall, project 2 */
 
-	int sys_num = f->R.rax;
+	syscall_handler_func *handler;
+	int sys_num;
+
+	
+	sys_num = f->R.rax;
 	handler = syscall_handlers[sys_num];
 	handler(f);
 
-	//printf ("system call!\n");
-	//thread_exit ();
+	/* syscall, project 2 */
+	/****************************************/
 }
 
 
 
+/*******************************************/
+
+
+
+
+
+
+
+static void
+halt_handler(struct intr_frame *f){
+
+}
+
+static void 
+exit_handler(struct intr_frame* f){
+	int status;
+	status = f->R.rdi;
+	f->R.rax = status;
+	thread_exit();
+}
+
+static void 
+fork_handler(struct intr_frame* f){
+
+}
+
+static void
+exec_handler(struct intr_frame* f)
+{
+
+}
+
+static void 
+wait_handler(struct intr_frame* f)
+{
+
+}
+
+static void
+create_handler(struct intr_frame* f)
+{
+
+}
+
+static void
+remove_hander(struct intr_frame* f)
+{
+
+}
+
+static void
+read_handler(struct intr_frame* f)
+{
+
+}
+
+static void 
+open_handler(struct intr_frame *f)
+{
+	char* file_name = &f->R.rdi;
+	struct file *file = NULL;
+
+	
+	/* Open executable file. */
+	file = filesys_open (file_name);
+	if (file == NULL) {
+		printf ("load: %s: open failed\n", file_name);
+		f->R.rax = -1;
+		return;
+	}
+}
+
+static void 
+filesize_handler(struct intr_frame* f)
+{
+
+}
+
 static void  
 write_handler(struct intr_frame* f)
-{	
+{
 	int fd;
 	void* buffer;
 	unsigned size;
@@ -92,23 +242,20 @@ write_handler(struct intr_frame* f)
 		putbuf(buffer,size);
 }
 
-static void 
-wait_handler(struct intr_frame* f)
+static void
+seek_handler(struct intr_frame* f)
 {
-	int pid;
 
-	pid = f->R.rdi;
-	//pid가 유효한지 체크
-
-	
 }
 
-
-static void 
-exit_handler(struct intr_frame* f)
+static void
+tell_handler(struct intr_frame* f)
 {
-	int status;
-	status = f->R.rdi;
-	f->R.rax = status;
-	thread_exit();
+
+}
+
+static void
+close_handler(struct intr_frame* f)
+{
+
 }
