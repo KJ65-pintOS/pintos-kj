@@ -483,9 +483,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	
 	/************************************************/
 	/* Argument Passing, project 2 */
-	ptr = strchr(t->name,' ');
-	if(ptr != NULL)
-		*ptr = '\0';
+	// ptr = strchr(t->name,' ');
+	// if(ptr != NULL)
+	// 	*ptr = '\0';
 
 	/************************************************/
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);

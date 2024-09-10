@@ -130,10 +130,17 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
-	
+	/* process include 안했는데 왜 됨? */
+	struct process *process;
+	struct list_elem p_elem;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
-	uint64_t *pml4;                     /* Page map level 4 */
+	uint64_t *pml4;  
+	//struct process_info pinfo;	 // 나중에 userprog 안으로 옮기세용	
+
+
+	/* Page map level 4 */
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */

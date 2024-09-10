@@ -8,7 +8,7 @@
 #include "threads/flags.h"
 #include "intrinsic.h"
 
-//#include "init.h"
+
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -18,7 +18,10 @@ void syscall_handler (struct intr_frame *);
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "string.h"
-#include "threads/malloc.h"
+#include "userprog/process.h"
+// #include "threads/malloc.h"
+
+static struct list opened_files;
 
 typedef void 
 syscall_handler_func(struct intr_frame *);
@@ -102,8 +105,8 @@ syscall_init (void) {
 	/***********************************************/
 	/* syscall, project 2 */
 
-	// memset(fd_list, 0, sizeof(fd_list)); // fd 초기화
-	
+	/* 자 지금부터 열려있는 모든 파일은 커널이 관리합니다. */
+	list_init(&opened_files);
 
 	memset(syscall_handlers, 0 , sizeof(syscall_handlers)); // sycall 함수배열 초기화
 
@@ -159,7 +162,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 static void
 halt_handler(struct intr_frame *f){
-
+	
 }
 
 static void 
@@ -202,29 +205,77 @@ remove_hander(struct intr_frame* f)
 static void
 read_handler(struct intr_frame* f)
 {
+	int fd; 
+	void *buffer;
+	unsigned size;
+	struct file* file;
+	struct file_descriptor *user_fd;
 
+
+	fd = f->R.rax;
+	buffer = f->R.rdi;
+	size = f->R.rsi;
+
+	user_fd = thread_current()->process->fd;
+
+	if(is_empty(user_fd, fd))
+	{
+		f->R.rax = -1; //error, file not exist
+		return;
+	}
+
+	file = get_file(user_fd, fd);
+	f->R.rax = file_read(file, buffer, size);
 }
 
 static void 
 open_handler(struct intr_frame *f)
 {
-	char* file_name = &f->R.rdi;
+	char* file_name = f->R.rdi;
 	struct file *file = NULL;
+	struct thread* t = thread_current(); // userprog;
+	int empty_num; 
+	ASSERT(t!=NULL);
 
-	
+	struct process* p = t->process;
+	ASSERT(p!= NULL);
+
+	struct file_descriptor* user_fd = p->fd;
+	ASSERT(user_fd!=NULL);
+
 	/* Open executable file. */
 	file = filesys_open (file_name);
+
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		f->R.rax = -1;
 		return;
 	}
+
+	empty_num = find_empty_fd(user_fd);
+	if( empty_num == -1 ); // 예외처리
+
+	set_fd(user_fd,empty_num,file);
+
+	f->R.rax = empty_num;
 }
 
 static void 
 filesize_handler(struct intr_frame* f)
-{
+{	
+	struct thread *t;
+	struct process *p;
+	struct file_descriptor *user_fd;
+	int fd;
 
+	t = thread_current();
+	p = t->process;
+	user_fd = p->fd;
+
+	if(is_occupied(user_fd, fd))
+		f->R.rax = file_length(get_file(user_fd,fd));
+	else
+		f->R.rax = -1; // 파일이 없을 경우 -1 
 }
 
 static void  

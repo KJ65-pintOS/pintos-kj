@@ -33,7 +33,8 @@ static void __do_fork (void *);
 
 static void setup_argument(struct intr_frame* if_, const char* file_name);
 static void remove_extra_spaces(char *str);
-
+static void 
+set_connection(struct thread *t, struct process *p);
 
 /***********************************************************************/
 
@@ -41,6 +42,32 @@ static void remove_extra_spaces(char *str);
 static void
 process_init (void) {
 	struct thread *current = thread_current ();
+	struct process *p = palloc_get_page(PAL_USER);
+	/*
+	if (p == NULL)
+		return TID_ERROR;
+	*/
+
+	/* lock init part */
+	lock_init(&p->fd_lock);
+
+	/* list init part */
+	list_init(&p->threads);
+	
+	/* make fd */
+	p->fd = palloc_get_page(PAL_USER);
+	init_fd(p->fd);
+	init_fd2(p->fd);
+	
+	/* make connection thread with process */
+	set_connection(current,p);
+}
+// make connections thread with process
+static void 
+set_connection(struct thread *t, struct process *p)
+{
+	list_push_back(&p->threads, &t->p_elem); // 스레드에 Process 관련 list_elem 추가
+	t->process = p;
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -528,6 +555,19 @@ static void remove_extra_spaces(char *str) {
     
     str[j] = '\0'; // 최종 문자열 종료
 }
+int find_empty_fd(struct file_descriptor * fd)
+{   
+    ASSERT(fd != NULL)
+    if(fd == NULL)
+        return -1;
+    for(int i = 0; i < 512; i++ )
+    {
+        if( fd->fd[i] == 0)
+            return i;
+    }
+    return -1;
+}
+
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
 static bool
