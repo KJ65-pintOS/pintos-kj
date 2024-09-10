@@ -10,4 +10,12 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (struct thread *next);
 
+struct fork_args {
+    struct thread *parent;
+    struct intr_frame *fork_intr_frame;
+    struct semaphore fork_sema;
+    // sema
+    // reason being killed
+};
+
 #endif /* userprog/process.h */

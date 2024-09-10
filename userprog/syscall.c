@@ -7,9 +7,16 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "userprog/process.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+
+/* handlers */
+static void exit_handler(struct intr_frame *f);
+static void write_handler(struct intr_frame *f);
+static void fork_handler(struct intr_frame *f);
+static void wait_handler(struct intr_frame *f);
 
 /* System call.
  *
@@ -41,6 +48,63 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-	printf ("system call!\n");
-	thread_exit ();
+	/*
+		시스템 콜 핸들러는 시스템 콜 번호를 받아오고, 시스템 콜 인자들을 받아오고, 그에 알맞은 액션을 취해야 합니다.
+	*/
+	switch (f->R.rax) {
+		case SYS_EXIT:
+			exit_handler(f);
+			break;
+		case SYS_WRITE:
+			write_handler(f);
+			break;
+		case SYS_FORK:
+			fork_handler(f);
+			break;
+		case SYS_WAIT:
+			wait_handler(f);
+			break;
+		default:
+			thread_exit();
+			break;
+	}
+	
+}
+
+static void exit_handler(struct intr_frame *f) {
+	struct thread *current = thread_current();
+	int exit_code = f->R.rdi;
+	current->exit_code = exit_code;
+	current->tf.R.rax = exit_code;
+	thread_exit();
+}
+
+static void write_handler(struct intr_frame *f) {
+	/*
+		rdi = fd
+		rsi = buffer
+		rdx = size
+	*/
+	uint64_t fd = f->R.rdi;
+	char* buffer = (char *)f->R.rsi;
+	size_t size = (size_t)f->R.rdx;
+	if (fd == STDOUT_FILENO)
+		putbuf(buffer, size);
+	f->R.rax = size; // return size
+}
+
+void fork_handler(struct intr_frame *f) {
+	char *thread_name = (char *)f->R.rdi;
+	init_process_wait_info();
+	int pid = process_fork(thread_name, f);
+
+	f->R.rax = pid;  // set fork() syscall return value as pid of child
+	// is_process = false 해주는거 고려
+}
+
+void wait_handler(struct intr_frame *f) {
+	int pid = (int)f->R.rdi;
+	int exit_code = process_wait(pid);
+
+	f->R.rax = exit_code;
 }
