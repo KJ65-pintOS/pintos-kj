@@ -7,11 +7,13 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "userprog/process.h"
 
 
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+
 
 /************************************************************************/
 /* syscall, project 2  */
@@ -135,6 +137,7 @@ void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
 
+
 	/****************************************/
 	/* syscall, project 2 */
 
@@ -167,15 +170,21 @@ halt_handler(struct intr_frame *f){
 
 static void 
 exit_handler(struct intr_frame* f){
-	int status;
-	status = f->R.rdi;
-	f->R.rax = status;
+	struct thread *current = thread_current();
+	int exit_code = f->R.rdi;
+	current->exit_code = exit_code;
+	current->tf.R.rax = exit_code;
 	thread_exit();
 }
 
 static void 
 fork_handler(struct intr_frame* f){
+ 	char *thread_name = (char *)f->R.rdi;
+	init_process_wait_info();
+	int pid = process_fork(thread_name, f);
 
+	f->R.rax = pid;  // set fork() syscall return value as pid of child
+	// is_process = false 해주는거 고려
 }
 
 static void
@@ -187,7 +196,10 @@ exec_handler(struct intr_frame* f)
 static void 
 wait_handler(struct intr_frame* f)
 {
+ 	int pid = (int)f->R.rdi;
+	int exit_code = process_wait(pid);
 
+	f->R.rax = exit_code;
 }
 
 static void
@@ -310,3 +322,4 @@ close_handler(struct intr_frame* f)
 {
 
 }
+

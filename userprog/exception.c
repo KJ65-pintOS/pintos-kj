@@ -79,6 +79,8 @@ kill (struct intr_frame *f) {
 
 	/* The interrupt frame's code segment value tells us where the
 	   exception originated. */
+	struct thread *child = thread_current();
+	child->exit_code = KILLED;
 	switch (f->cs) {
 		case SEL_UCSEG:
 			/* User's code segment, so it's a user exception, as we
