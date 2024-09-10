@@ -133,9 +133,13 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
-	
+	/* process include 안했는데 왜 됨? */
+	struct process *process;
+	struct list_elem p_elem;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
+
 	uint64_t *pml4;                     /* Page map level 4 */
 	struct semaphore p_wait_sema;
 	struct list process_children;
@@ -143,6 +147,7 @@ struct thread {
 	bool is_process;
 	int exit_code;
 	// 자식 process는 부모 process가 wait할 때까지 자식은 자원을 반환(destroyed)하면 안됨. 이를 위한 sema 중요
+
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */

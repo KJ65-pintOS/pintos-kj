@@ -217,9 +217,9 @@ lock_acquire (struct lock *lock) {
    struct thread* curr;
    enum intr_level old_level;
 
-	ASSERT (lock != NULL);
-	ASSERT (!intr_context ());
-	ASSERT (!lock_held_by_current_thread (lock));
+	 ASSERT (lock != NULL);
+	 ASSERT (!intr_context ());
+	 ASSERT (!lock_held_by_current_thread (lock));
    
    curr = thread_current();
    old_level = intr_disable();
@@ -233,7 +233,7 @@ lock_acquire (struct lock *lock) {
    } 
 
    list_push_back(&curr->locks, &lock->elem);
-	lock->holder = curr;
+	 lock->holder = curr;
    intr_set_level(old_level);
 }
 

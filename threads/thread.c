@@ -486,9 +486,18 @@ init_thread (struct thread *t, const char *name, int priority) {
 	ASSERT (t != NULL);
 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT (name != NULL);
+
 	memset (t, 0, sizeof *t);
 	t->status = THREAD_BLOCKED;
 	strlcpy (t->name, name, sizeof t->name);
+	
+	/************************************************/
+	/* Argument Passing, project 2 */
+	// ptr = strchr(t->name,' ');
+	// if(ptr != NULL)
+	// 	*ptr = '\0';
+
+	/************************************************/
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
@@ -751,13 +760,15 @@ thread_try_donate_prt(int given_prt, struct thread* to)
 
 void 
 thread_event(void)
-{
-	if(is_priority_less_than_next(thread_get_priority())) {
-		if (intr_context())
+{	
+
+	if(is_priority_less_than_next(thread_get_priority()))
+		/* 외부 인터럽트 단계에서 실행시 yield on return 만 켜기. */
+		if(intr_context()) 
 			intr_yield_on_return();
 		else
 			thread_yield();
-	}
+
 }
 
 

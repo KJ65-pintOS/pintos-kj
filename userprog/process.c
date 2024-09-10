@@ -34,13 +34,54 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
-void setup_arguments(const char *file_name, struct intr_frame *if_);
-static char *f_name_to_t_name(const char *file_name, char *t_name);
+
+
+/***********************************************************************/
+
+#define ALIGNMENT sizeof(char *)
+
+static void setup_argument(struct intr_frame* if_, const char* file_name);
+static void remove_extra_spaces(char *str);
+static void 
+set_connection(struct thread *t, struct process *p);
+
+/***********************************************************************/
+
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
-	struct thread *child = thread_current ();
+	struct thread *current = thread_current ();
+	struct process *p = palloc_get_page(PAL_USER);
+	/*
+	if (p == NULL)
+		return TID_ERROR;
+	*/
+
+	/* lock init part */
+	lock_init(&p->fd_lock);
+
+	/* list init part */
+	list_init(&p->threads);
+	
+	/* make fd */
+	p->fd = palloc_get_page(PAL_USER);
+	init_fd(p->fd);
+	init_fd2(p->fd);
+	
+	/* make connection thread with process */
+	set_connection(current,p);
 }
+// make connections thread with process
+static void 
+set_connection(struct thread *t, struct process *p)
+{
+	list_push_back(&p->threads, &t->p_elem); // 스레드에 Process 관련 list_elem 추가
+	t->process = p;
+}
+
+//void setup_arguments(const char *file_name, struct intr_frame *if_);
+static char *f_name_to_t_name(const char *file_name, char *t_name);
+/* General process initializer for initd and other process. */
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
  * The new thread may be scheduled (and may even exit)
@@ -248,6 +289,9 @@ process_exec (void *f_name) {
  * */
 int
 process_wait (tid_t child_tid UNUSED) {
+	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
+	 * XXX:       to add infinite loop here before
+	 * XXX:       implementing the process_wait. */
 	struct thread *parent = thread_current();
 	struct thread *child = get_child_by_id(child_tid);
 	if (child == NULL)
@@ -264,12 +308,17 @@ process_wait (tid_t child_tid UNUSED) {
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
-	struct thread *child = thread_current ();
-	
+  	/* TODO: Your code goes here.
+	 * TODO: Implement process termination message (see
+	 * TODO: project2/process_termination.html).
+	 * TODO: We recommend you to implement process resource cleanup here. */
+  struct thread *child = thread_current ();
+  
 	if (child->is_process) {
 		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
 		sema_up(&child->p_wait_sema);
 	}
+
 	process_cleanup ();
 }
 
@@ -364,6 +413,8 @@ struct ELF64_PHDR {
 #define ELF ELF64_hdr
 #define Phdr ELF64_PHDR
 
+#define USERPROG
+
 static bool setup_stack (struct intr_frame *if_);
 static bool validate_segment (const struct Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
@@ -382,6 +433,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	off_t file_ofs;
 	bool success = false;
 	int i;
+
+	/*****************************************************************/
+	//todo filename 의 값이 제대로 복사되지 않고 있음. strcpy등으로 복사해서 저장하자.
+	char* argv;
+	argv = strchr(file_name,' '); //file name 뒤를 짜름.
+	if(argv != NULL)
+		*argv = '\0';
+
+	/*****************************************************************/
 
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
@@ -406,7 +466,6 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
-
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -418,6 +477,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: error loading executable\n", file_name);
 		goto done;
 	}
+
 
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
@@ -476,14 +536,26 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (!setup_stack (if_))
 		goto done;
 
+	/*****************************************************************/
+	/* Set up arguments */
+	if(argv != NULL)
+		*argv = ' ';
+	setup_argument(if_, file_name);
+
+
+	/*****************************************************************/
+
+
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+
 	if (space_ptr != NULL)
 		*space_ptr = ' ';
 	setup_arguments(file_name, if_);
+  
 	success = true;
 
 done:
@@ -491,33 +563,88 @@ done:
 	file_close (file);
 	return success;
 }
-
-void setup_arguments(const char *file_name, struct intr_frame *if_) {
-	char *trimmed_arg = remove_extra_spaces(file_name);
-	size_t arg_size_with_null = strlen(trimmed_arg) + 1; // 1 for null terminator
-
-	if_->rsp -= arg_size_with_null;
-	strlcpy(if_->rsp, trimmed_arg, arg_size_with_null);
-
+static void setup_argument(struct intr_frame* if_, const char* file_name)
+{	
 	char *token, *save_ptr, *argv[64];
-	uint64_t argc = 0;
-	for (token = strtok_r(if_->rsp, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) 
-		argv[argc++] = token;
+	uint32_t argv_size;
+	uint64_t argc = 0; 
+	size_t tmp_len;
 	
-	int pad_align_and_argv_null = (ALIGN(arg_size_with_null) - arg_size_with_null) + ALIGNMENT;
-	if_->rsp -= (pad_align_and_argv_null);
-	memset(if_->rsp, 0, pad_align_and_argv_null); // argv 마지막 원소까지 0으로 set
+	remove_extra_spaces(file_name);  
+	
+	argv_size = strlen(file_name) + 1;
+	if_->rsp -= argv_size;
+	memcpy(if_->rsp, file_name, argv_size);
 
-	if_->rsp -= ALIGNMENT * argc;
-	if_->R.rsi = if_->rsp;
-	memcpy(if_->rsp, argv, ALIGNMENT * argc);
+	for(token = strtok_r(if_->rsp, " " , &save_ptr); token != NULL; 
+		token = strtok_r(NULL," ", &save_ptr))
+	{	
+		argv[argc] = token;
+		argc++;
+	}
+
+	if( argv_size % ALIGNMENT != 0)
+	{	
+		int size = ALIGNMENT - argv_size % ALIGNMENT ;
+		if_->rsp -= size;
+		memset(if_->rsp, 0, size);
+	}
+
+	//마지막 argv flag 설정
+	if_->rsp -= ALIGNMENT; 
+	memset(if_->rsp, 0, ALIGNMENT);
+
+	// argv memcpy
+	if_->rsp -= argc * ALIGNMENT;
+	memcpy(if_->rsp, argv, (argc) * ALIGNMENT);
 	
-	// set return addr to zero
+	if_->R.rsi = if_->rsp;
+	if_->R.rdi = argc;
+
+	// return address 설정
 	if_->rsp -= ALIGNMENT;
 	memset(if_->rsp, 0, ALIGNMENT);
-	if_->R.rdi = argc;
-}
 
+}
+static void remove_extra_spaces(char *str) {
+    int i = 0, j = 0;
+    int space_flag = 0;
+    
+    while (str[i] != '\0') {
+        // 현재 문자가 공백(' ')일 경우
+        if (str[i] == ' ') {
+            if (!space_flag) {
+                // 공백이 처음 나타나면 공백을 복사
+                str[j++] = ' ';
+                space_flag = 1;
+            }
+        } else {
+            // 공백이 아닌 문자가 나오면 플래그를 초기화하고 문자 복사
+            str[j++] = str[i];
+            space_flag = 0;
+        }
+        i++;
+    }
+    
+    // 마지막에 남은 공백 제거
+    if (j > 0 && str[j-1] == ' ') {
+        j--;
+    }
+    
+    str[j] = '\0'; // 최종 문자열 종료
+}
+int find_empty_fd(struct file_descriptor * fd)
+{   
+    ASSERT(fd != NULL)
+    if(fd == NULL)
+        return -1;
+    for(int i = 0; i < 512; i++ )
+    {
+        if( fd->fd[i] == 0)
+            return i;
+    }
+    return -1;
+}
 
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
