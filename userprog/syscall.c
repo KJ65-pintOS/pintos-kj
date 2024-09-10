@@ -143,7 +143,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 	syscall_handler_func *handler;
 	int sys_num;
-
 	
 	sys_num = f->R.rax;
 	handler = syscall_handlers[sys_num];
