@@ -27,10 +27,47 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
+/***********************************************************************/
+
+#define ALIGNMENT sizeof(char *)
+
+static void setup_argument(struct intr_frame* if_, const char* file_name);
+static void remove_extra_spaces(char *str);
+static void 
+set_connection(struct thread *t, struct process *p);
+
+/***********************************************************************/
+
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
 	struct thread *current = thread_current ();
+	struct process *p = palloc_get_page(PAL_USER);
+	/*
+	if (p == NULL)
+		return TID_ERROR;
+	*/
+
+	/* lock init part */
+	lock_init(&p->fd_lock);
+
+	/* list init part */
+	list_init(&p->threads);
+	
+	/* make fd */
+	p->fd = palloc_get_page(PAL_USER);
+	init_fd(p->fd);
+	init_fd2(p->fd);
+	
+	/* make connection thread with process */
+	set_connection(current,p);
+}
+// make connections thread with process
+static void 
+set_connection(struct thread *t, struct process *p)
+{
+	list_push_back(&p->threads, &t->p_elem); // 스레드에 Process 관련 list_elem 추가
+	t->process = p;
 }
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -65,7 +102,6 @@ initd (void *f_name) {
 #endif
 
 	process_init ();
-
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -203,9 +239,8 @@ int
 process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
-	 * XXX:       implementing the process_wait. 
-	 * (pintos가 process_wait(initd)를 종료하면 process_wait를 구현하기 전에
-	 * 여기에 무한 루프를 추가하는 것이 좋다.)*/
+	 * XXX:       implementing the process_wait. */
+	//while(1);
 	return -1;
 }
 
@@ -216,10 +251,9 @@ process_exit (void) {
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. 
-	 * (코드는 여기에 있다.
-	 * 프로세스 종료 메시지 구현(project2/process_termination.html 참조
-	 * 여기에서 프로세스 리소스 정리를 구현하는 것이 좋다.))*/
+	 * TODO: We recommend you to implement process resource cleanup here. */
+
+	printf ("%s: exit(%d)\n",curr->name ,curr->tf.R.rax);
 
 	process_cleanup ();
 }
@@ -319,6 +353,8 @@ struct ELF64_PHDR {
 #define ELF ELF64_hdr
 #define Phdr ELF64_PHDR
 
+#define USERPROG
+
 static bool setup_stack (struct intr_frame *if_);
 static bool validate_segment (const struct Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
@@ -337,13 +373,16 @@ load (const char *file_name, struct intr_frame *if_) {
 	off_t file_ofs;
 	bool success = false;
 	int i;
-	//custom
+
+	/*****************************************************************/
+	//todo filename 의 값이 제대로 복사되지 않고 있음. strcpy등으로 복사해서 저장하자.
 	char* argv;
-	
-	argv = strchr(file_name, ' ');
-	if (argv != NULL)
+	argv = strchr(file_name,' '); //file name 뒤를 짜름.
+	if(argv != NULL)
 		*argv = '\0';
-		
+
+	/*****************************************************************/
+
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
@@ -356,7 +395,6 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
-
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -368,6 +406,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: error loading executable\n", file_name);
 		goto done;
 	}
+
 
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
@@ -426,17 +465,22 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (!setup_stack (if_))
 		goto done;
 
-	if (argv != NULL) {
+	/*****************************************************************/
+	/* Set up arguments */
+	if(argv != NULL)
 		*argv = ' ';
-		setup_argument (if_, file_name);
-	}
+	setup_argument(if_, file_name);
+
+
+	/*****************************************************************/
+
 
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
+	
 	success = true;
 
 done:
@@ -444,80 +488,90 @@ done:
 	file_close (file);
 	return success;
 }
-
-// file_name이 wild하니 띄어쓰기가 몇개가 들어올지 모르므로 세개든 두개든 한개로 만들어주는 함수
-char* remove_extra_spaces(char* str) {
-    if (str == NULL) return NULL;
-
-    size_t len = strlen(str);
-    size_t read = 0, write = 0;
-    int space_found = 0;
-
-    while (read < len) {
-        if (str[read] != ' ') {
-            str[write++] = str[read];
-            space_found = 0;
-        } else if (!space_found) {
-            str[write++] = ' ';
-            space_found = 1;
-        }
-        read++;
-    }
-
-    // 문자열 끝에 공백이 있다면 제거
-    if (write > 0 && str[write - 1] == ' ') {
-        write--;
-    }
-
-    str[write] = '\0';  // 새로운 문자열의 끝을 표시
-
-    return str;
-}
-//
-void setup_argument(struct intr_frame *if_, const char *file_name) 
-{
+static void setup_argument(struct intr_frame* if_, const char* file_name)
+{	
 	char *token, *save_ptr, *argv[64];
 	uint32_t argv_size;
-	uint64_t argc = 0;
+	uint64_t argc = 0; 
 	size_t tmp_len;
-
-	remove_extra_spaces(file_name);
-
+	
+	remove_extra_spaces(file_name);  
+	
 	argv_size = strlen(file_name) + 1;
-	if_ -> rsp = argv_size;
-	memcpy(if_ -> rsp, file_name, argv_size);
+	if_->rsp -= argv_size;
+	memcpy(if_->rsp, file_name, argv_size);
 
-	// *argv[0] = '\0';
-	// strtok_r을 사용하면 token에 어떻게 들어가는지 ?
-	for (token = strtok_r(if_ -> rsp, " ", &save_ptr); token != NULL;
-		token = strtok_r(NULL, " ", &save_ptr))
-	{
-		// printf("test %s", token);
+	for(token = strtok_r(if_->rsp, " " , &save_ptr); token != NULL; 
+		token = strtok_r(NULL," ", &save_ptr))
+	{	
 		argv[argc] = token;
 		argc++;
 	}
 
-	if (argv_size % ALIGNMENT != 0) {
-		int size = ALIGNMENT - argv_size % ALIGNMENT;
-		if_ -> rsp -= size;
-		memset(if_ -> rsp, 0, size);
+	if( argv_size % ALIGNMENT != 0)
+	{	
+		int size = ALIGNMENT - argv_size % ALIGNMENT ;
+		if_->rsp -= size;
+		memset(if_->rsp, 0, size);
 	}
 
 	//마지막 argv flag 설정
-	if_ -> rsp -= ALIGNMENT;
-	memset(if_ -> rsp, 0, ALIGNMENT);
+	
+	if_->rsp -= ALIGNMENT; 
+	memset(if_->rsp, 0, ALIGNMENT);
 
-	//argv memcpy
-	if_ -> rsp -= argc * ALIGNMENT;
-	memcpy(if_ -> rsp, argv, (argc) * ALIGNMENT);
-
-	if_ -> R.rsi = if_ -> rsp;
-	if_ -> R.rdi = argc;
+	// argv memcpy
+	if_->rsp -= argc * ALIGNMENT;
+	memcpy(if_->rsp, argv, (argc) * ALIGNMENT);
+	
+	if_->R.rsi = if_->rsp;
+	if_->R.rdi = argc;
 
 	// return address 설정
-	if_ -> rsp -= ALIGNMENT;
-	memset(if_ -> rsp, 0, ALIGNMENT);
+	if_->rsp -= ALIGNMENT;
+	memset(if_->rsp, 0, ALIGNMENT);
+
 }
+static void remove_extra_spaces(char *str) {
+    int i = 0, j = 0;
+    int space_flag = 0;
+    
+    while (str[i] != '\0') {
+        // 현재 문자가 공백(' ')일 경우
+        if (str[i] == ' ') {
+            if (!space_flag) {
+                // 공백이 처음 나타나면 공백을 복사
+                str[j++] = ' ';
+                space_flag = 1;
+            }
+        } else {
+            // 공백이 아닌 문자가 나오면 플래그를 초기화하고 문자 복사
+            str[j++] = str[i];
+            space_flag = 0;
+        }
+        i++;
+    }
+    
+    // 마지막에 남은 공백 제거
+    if (j > 0 && str[j-1] == ' ') {
+        j--;
+    }
+    
+    str[j] = '\0'; // 최종 문자열 종료
+}
+int find_empty_fd(struct file_descriptor * fd)
+{   
+    ASSERT(fd != NULL)
+    if(fd == NULL)
+        return -1;
+    for(int i = 0; i < 512; i++ )
+    {
+        if( fd->fd[i] == 0)
+            return i;
+    }
+    return -1;
+}
+
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
 static bool

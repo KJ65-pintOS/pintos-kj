@@ -231,10 +231,9 @@ lock_acquire (struct lock *lock) {
          thread_peeker(&lock->semaphore.waiters)); // O(N)의 작업시간 소요됨
       free_wait_lock(curr);
    } 
-
-   intr_set_level(old_level);
    list_push_back(&curr->locks, &lock->elem);
 	lock->holder = curr;
+   intr_set_level(old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false

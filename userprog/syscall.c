@@ -8,8 +8,74 @@
 #include "threads/flags.h"
 #include "intrinsic.h"
 
+
+
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+
+/************************************************************************/
+/* syscall, project 2  */
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "string.h"
+#include "userprog/process.h"
+// #include "threads/malloc.h"
+
+static struct list opened_files;
+
+typedef void 
+syscall_handler_func(struct intr_frame *);
+
+static syscall_handler_func 
+*syscall_handlers[25]; // 25는 총 syscall 갯수;
+
+
+static void
+halt_handler(struct intr_frame *f);
+
+static void 
+exit_handler(struct intr_frame* f);
+
+static void 
+fork_handler(struct intr_frame* f);
+
+static void
+exec_handler(struct intr_frame* f);
+
+static void 
+wait_handler(struct intr_frame* f);
+
+static void
+create_handler(struct intr_frame* f);
+
+static void
+remove_hander(struct intr_frame* f);
+
+static void
+read_handler(struct intr_frame* f);
+
+static void 
+open_handler(struct intr_frame *f);
+
+static void 
+filesize_handler(struct intr_frame* f);
+
+static void  
+write_handler(struct intr_frame* f);
+
+static void
+seek_handler(struct intr_frame* f);
+
+static void
+tell_handler(struct intr_frame* f);
+
+static void
+close_handler(struct intr_frame* f);
+
+
+
+/* syscall, project 2 */
+/************************************************************************/
 
 /* System call.
  *
@@ -35,12 +101,212 @@ syscall_init (void) {
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+	
+	/***********************************************/
+	/* syscall, project 2 */
+
+	/* 자 지금부터 열려있는 모든 파일은 커널이 관리합니다. */
+	list_init(&opened_files);
+
+	memset(syscall_handlers, 0 , sizeof(syscall_handlers)); // sycall 함수배열 초기화
+
+	syscall_handlers[SYS_HALT] = halt_handler;
+	syscall_handlers[SYS_EXIT] = exit_handler;
+	syscall_handlers[SYS_FORK] = fork_handler;
+	syscall_handlers[SYS_EXEC] =exec_handler;
+	syscall_handlers[SYS_WAIT] = wait_handler;
+	syscall_handlers[SYS_CREATE] = create_handler;
+	syscall_handlers[SYS_REMOVE] = remove_hander;
+	syscall_handlers[SYS_READ] = read_handler;
+	syscall_handlers[SYS_OPEN] = open_handler;
+	syscall_handlers[SYS_FILESIZE] = filesize_handler;
+	syscall_handlers[SYS_WRITE] = write_handler; 
+	syscall_handlers[SYS_SEEK] = seek_handler;
+	syscall_handlers[SYS_TELL] = tell_handler;
+	syscall_handlers[SYS_CLOSE] = close_handler;
+
+
+	//syscall_hadnlers[SYS_FILESIZE] = 
+	/***********************************************/
 }
 
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-	printf ("system call!\n");
-	thread_exit ();
+
+	/****************************************/
+	/* syscall, project 2 */
+
+	syscall_handler_func *handler;
+	int sys_num;
+
+	
+	sys_num = f->R.rax;
+	handler = syscall_handlers[sys_num];
+	handler(f);
+
+	/* syscall, project 2 */
+	/****************************************/
+}
+
+
+
+/*******************************************/
+
+
+
+
+
+
+
+static void
+halt_handler(struct intr_frame *f){
+	
+}
+
+static void 
+exit_handler(struct intr_frame* f){
+	int status;
+	status = f->R.rdi;
+	f->R.rax = status;
+	thread_exit();
+}
+
+static void 
+fork_handler(struct intr_frame* f){
+
+}
+
+static void
+exec_handler(struct intr_frame* f)
+{
+
+}
+
+static void 
+wait_handler(struct intr_frame* f)
+{
+
+}
+
+static void
+create_handler(struct intr_frame* f)
+{
+
+}
+
+static void
+remove_hander(struct intr_frame* f)
+{
+
+}
+
+static void
+read_handler(struct intr_frame* f)
+{
+	int fd; 
+	void *buffer;
+	unsigned size;
+	struct file* file;
+	struct file_descriptor *user_fd;
+
+
+	fd = f->R.rax;
+	buffer = f->R.rdi;
+	size = f->R.rsi;
+
+	user_fd = thread_current()->process->fd;
+
+	if(is_empty(user_fd, fd))
+	{
+		f->R.rax = -1; //error, file not exist
+		return;
+	}
+
+	file = get_file(user_fd, fd);
+	f->R.rax = file_read(file, buffer, size);
+}
+
+static void 
+open_handler(struct intr_frame *f)
+{
+	char* file_name = f->R.rdi;
+	struct file *file = NULL;
+	struct thread* t = thread_current(); // userprog;
+	int empty_num; 
+	ASSERT(t!=NULL);
+
+	struct process* p = t->process;
+	ASSERT(p!= NULL);
+
+	struct file_descriptor* user_fd = p->fd;
+	ASSERT(user_fd!=NULL);
+
+	/* Open executable file. */
+	file = filesys_open (file_name);
+
+	if (file == NULL) {
+		printf ("load: %s: open failed\n", file_name);
+		f->R.rax = -1;
+		return;
+	}
+
+	empty_num = find_empty_fd(user_fd);
+	if( empty_num == -1 ); // 예외처리
+
+	set_fd(user_fd,empty_num,file);
+
+	f->R.rax = empty_num;
+}
+
+static void 
+filesize_handler(struct intr_frame* f)
+{	
+	struct thread *t;
+	struct process *p;
+	struct file_descriptor *user_fd;
+	int fd;
+
+	t = thread_current();
+	p = t->process;
+	user_fd = p->fd;
+
+	if(is_occupied(user_fd, fd))
+		f->R.rax = file_length(get_file(user_fd,fd));
+	else
+		f->R.rax = -1; // 파일이 없을 경우 -1 
+}
+
+static void  
+write_handler(struct intr_frame* f) // 핸들러를 실행하는 주체는 kernel 모드로 전환한 user prog이다.
+{
+	int fd;
+	void* buffer;
+	unsigned size;
+	struct thread* t = thread_current();
+	fd = f->R.rdi;
+	buffer = f->R.rsi;
+	size = f->R.rdx;
+
+	if(fd == STDOUT_FILENO)	
+		putbuf(buffer,size);
+}
+
+static void
+seek_handler(struct intr_frame* f)
+{
+
+}
+
+static void
+tell_handler(struct intr_frame* f)
+{
+
+}
+
+static void
+close_handler(struct intr_frame* f)
+{
+
 }
