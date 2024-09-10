@@ -1,3 +1,4 @@
+
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
@@ -28,6 +29,9 @@ static syscall_handler_func
 *syscall_handlers[25]; // 25는 총 syscall 갯수;
 
 #define get_user_fd(thread) (thread->process->fd)
+
+static struct file* 
+get_user_file(int fd);
 
 static void
 halt_handler(struct intr_frame *f);
