@@ -19,9 +19,7 @@ void syscall_handler (struct intr_frame *);
 #include "filesys/file.h"
 #include "string.h"
 #include "userprog/process.h"
-// #include "threads/malloc.h"
 
-static struct list opened_files;
 
 typedef void 
 syscall_handler_func(struct intr_frame *);
@@ -29,11 +27,12 @@ syscall_handler_func(struct intr_frame *);
 static syscall_handler_func 
 *syscall_handlers[25]; // 25는 총 syscall 갯수;
 
+#define get_user_fd(thread) (thread->process->fd)
 
 static void
 halt_handler(struct intr_frame *f);
 
-static void 
+static void
 exit_handler(struct intr_frame* f);
 
 static void 
@@ -105,8 +104,8 @@ syscall_init (void) {
 	/***********************************************/
 	/* syscall, project 2 */
 
-	/* 자 지금부터 열려있는 모든 파일은 커널이 관리합니다. */
-	list_init(&opened_files);
+	// /* 자 지금부터 열려있는 모든 파일은 커널이 관리합니다. */
+	// list_init(&opened_files);
 
 	memset(syscall_handlers, 0 , sizeof(syscall_handlers)); // sycall 함수배열 초기화
 
@@ -152,13 +151,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 
 
-/*******************************************/
-
-
-
-
-
-
 
 static void
 halt_handler(struct intr_frame *f){
@@ -193,38 +185,41 @@ wait_handler(struct intr_frame* f)
 static void
 create_handler(struct intr_frame* f)
 {
+	char* file_name;
+	unsigned initial_size;
+	
+	file_name = f->R.rdi;
+	initial_size = f->R.rsi;
 
+	f->R.rax = filesys_create(file_name, initial_size);
 }
 
 static void
 remove_hander(struct intr_frame* f)
 {
+	char *file_name;
 
+	file_name = f->R.rdi;
+
+	f->R.rax = filesys_remove(file_name);
 }
 
 static void
 read_handler(struct intr_frame* f)
 {
+	struct file* file;
 	int fd; 
 	void *buffer;
 	unsigned size;
-	struct file* file;
-	struct file_descriptor *user_fd;
+	
+	fd = f->R.rdi;
+	buffer = f->R.rsi;
+	size = f->R.rdx;
 
-
-	fd = f->R.rax;
-	buffer = f->R.rdi;
-	size = f->R.rsi;
-
-	user_fd = thread_current()->process->fd;
-
-	if(is_empty(user_fd, fd))
-	{
-		f->R.rax = -1; //error, file not exist
+	if((file = get_user_file(fd))== NULL){
+		f->R.rax = -1;
 		return;
 	}
-
-	file = get_file(user_fd, fd);
 	f->R.rax = file_read(file, buffer, size);
 }
 
@@ -232,81 +227,117 @@ static void
 open_handler(struct intr_frame *f)
 {
 	char* file_name = f->R.rdi;
+	struct file_descriptor* user_fd;
 	struct file *file = NULL;
-	struct thread* t = thread_current(); // userprog;
 	int empty_num; 
-	ASSERT(t!=NULL);
-
-	struct process* p = t->process;
-	ASSERT(p!= NULL);
-
-	struct file_descriptor* user_fd = p->fd;
-	ASSERT(user_fd!=NULL);
-
 	/* Open executable file. */
-	file = filesys_open (file_name);
 
+	file = filesys_open (file_name);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		f->R.rax = -1;
 		return;
 	}
 
+	user_fd = get_user_fd(thread_current());
 	empty_num = find_empty_fd(user_fd);
-	if( empty_num == -1 ); // 예외처리
+	if( empty_num == -1 ){
 
+	} // 예외처리
 	set_fd(user_fd,empty_num,file);
-
 	f->R.rax = empty_num;
 }
 
 static void 
 filesize_handler(struct intr_frame* f)
 {	
-	struct thread *t;
-	struct process *p;
-	struct file_descriptor *user_fd;
+	struct file *file;
 	int fd;
 
-	t = thread_current();
-	p = t->process;
-	user_fd = p->fd;
-
-	if(is_occupied(user_fd, fd))
-		f->R.rax = file_length(get_file(user_fd,fd));
-	else
-		f->R.rax = -1; // 파일이 없을 경우 -1 
+	if((file = get_user_file(fd)) == NULL){
+		f->R.rax = -1;
+		return;
+	}
+	f->R.rax = file_length(file);
 }
 
 static void  
 write_handler(struct intr_frame* f) // 핸들러를 실행하는 주체는 kernel 모드로 전환한 user prog이다.
-{
+{	
+	struct file *file;
 	int fd;
 	void* buffer;
 	unsigned size;
-	struct thread* t = thread_current();
+	
 	fd = f->R.rdi;
 	buffer = f->R.rsi;
 	size = f->R.rdx;
 
-	if(fd == STDOUT_FILENO)	
+	/* 표준 출력에 작성 */
+	if(fd == STDOUT_FILENO)	{
 		putbuf(buffer,size);
+		return;
+	}
+
+	if((file = get_user_file(fd)) == NULL){
+		f->R.rax = -1;
+		return;
+	}
+	f->R.rax = file_write(file,buffer,size);
 }
 
 static void
 seek_handler(struct intr_frame* f)
 {
+	struct file *file;
+	int fd; 
+	unsigned position;
 
+	fd = f->R.rdi;
+	position = f->R.rsi;
+
+	if((file = get_user_file(fd)) == NULL){
+		f->R.rax = -1;
+		return;
+	}
+	file_seek(file,position);
 }
 
 static void
 tell_handler(struct intr_frame* f)
 {
+	struct file *file;
+	int fd;
 
+	fd = f->R.rdi;
+	if((file = get_user_file(fd)) == NULL){
+		f->R.rax = -1;
+		return;
+	}
+	f->R.rax = file_tell(file);
 }
 
 static void
 close_handler(struct intr_frame* f)
 {
+	struct file *file;
+	int fd;
 
+	fd = f->R.rdi;
+	if((file = get_user_file(fd)) == NULL)
+	{
+		f->R.rax = -1;
+		return;
+	}
+	file_close(file);
+}
+
+static struct file* 
+get_user_file(int fd)
+{
+	struct file_descriptor *user_fd = get_user_fd(thread_current());
+	if(is_empty(user_fd,fd))
+		return NULL;
+	//todo 유효한 파일인지 검사, 이미 닫혔는지 아닌지, 가르키는 주소가 파일이 맞는지.
+	return get_file(user_fd,fd);
 }

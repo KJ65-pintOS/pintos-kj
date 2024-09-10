@@ -32,9 +32,18 @@ struct file_descriptor{
 // struct_fd should be a pointer
 #define is_occupied(struct_fd, index ) ( struct_fd->fd[index] != 0 )
 
-#define get_file(struct_fd , index) (struct_fd->fd[index])
 // struct_fd should be a pointer
 #define is_empty(struct_fd, index) ( struct_fd->fd[index] == 0)
+
+#define is_file(struct_fd, index) (strucr_fd->fd[index] != 0 && 0) // 수정해야함.
+
+#define is_valid_fd(struct_fd, index)
+
+#define get_user_fd(thread) (thread->process->fd)
+
+#define get_file(struct_fd , index) (struct_fd->fd[index])
+
+
 
 // struct_fd, file should be a pointer
 #define set_fd(struct_fd, index, file ) ( struct_fd->fd[index] = file)

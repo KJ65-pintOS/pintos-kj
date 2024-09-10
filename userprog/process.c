@@ -568,6 +568,7 @@ int find_empty_fd(struct file_descriptor * fd)
     return -1;
 }
 
+
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
 static bool
