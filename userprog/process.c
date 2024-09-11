@@ -311,8 +311,10 @@ process_wait (tid_t child_tid UNUSED) {
 	struct thread *child = get_child_by_id(child_tid);
 	if (child == NULL)
 		return -1;
-	
+
+	sema_up(&child->kill_sema);
 	sema_down(&child->p_wait_sema);
+
 	int exit_code = child->exit_code;
 	if (exit_code == KILLED)
 		return -1;
@@ -337,10 +339,9 @@ process_exit (void) {
 		for(int i = 2; i < FD_MAX_SIZE; i++)
 			if(is_occupied(fd_table,i))
 				file_close(fd_table->fd_array[i]);
-
-		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
+		sema_down(&child->kill_sema);
 		sema_up(&child->p_wait_sema);
-		
+		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
 	}
 #endif
 

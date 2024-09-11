@@ -277,6 +277,7 @@ thread_create (const char *name, int priority,
 	if (parent->is_process == true) {
 		t->is_process = true;
 		sema_init(&t->p_wait_sema, 0); // child sema init
+		sema_init(&t->kill_sema, 0);
 		list_push_back(&(parent->process_children), &t->p_child_elem); // put child elem into children list of parent
 	}
 #endif
