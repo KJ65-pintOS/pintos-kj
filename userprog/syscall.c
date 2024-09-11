@@ -199,7 +199,7 @@ exec_handler(struct intr_frame* f)
 		NOT_REACHED();
 	}
 	strlcpy(fn_copy, file_name, strlen(file_name) + 1);
-	process_exec(fn_copy);
+	f->R.rax = process_exec(fn_copy);
 }
 
 static void 
@@ -277,6 +277,9 @@ open_handler(struct intr_frame *f)
 		thread_exit();
 		NOT_REACHED();
 	}
+	struct thread* t = thread_current();
+
+
 
 	file = filesys_open (file_name);
 	if (file == NULL) {
@@ -285,11 +288,12 @@ open_handler(struct intr_frame *f)
 	}
 
 	user_fd = get_user_fd(thread_current());
-	empty_num = find_empty_fd(user_fd);
-	if( empty_num == -1 ){
-
+	if( (empty_num = find_empty_fd(user_fd)) == -1 ){
+		f->R.rax = -1;
+		return;
 	} // 예외처리
 	set_fd(user_fd,empty_num,file);
+
 	f->R.rax = empty_num;
 }
 

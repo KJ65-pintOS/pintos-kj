@@ -67,8 +67,12 @@ process_init (void) {
 	struct thread *current = thread_current ();
 
 #ifdef USERPROG 
-	struct process *p = palloc_get_page(PAL_USER);
-
+	struct process *p;
+	if( (p =palloc_get_page(PAL_USER)) == NULL)
+	{
+		thread_current()->exit_code = -1;
+		thread_exit();
+	}
 	/* lock init part */
 	lock_init(&p->fd_lock);
 
@@ -77,6 +81,11 @@ process_init (void) {
 	
 	/* make fd */
 	p->fd = palloc_get_page(PAL_USER);
+	if( p->fd == NULL)
+	{
+		thread_current()->exit_code = -1;
+		thread_exit();
+	}
 	init_fd(p->fd);
 	init_fd2(p->fd);
 	
@@ -135,7 +144,12 @@ tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	struct thread *parent = thread_current();
-	struct fork_args *fork_args = palloc_get_page(0);
+	struct fork_args *fork_args;
+
+	if((fork_args = palloc_get_page(0)) == NULL){
+		return -1;
+	}
+
 	tid_t pid;
 
 	fork_args->parent = parent;
@@ -144,7 +158,6 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	sema_init(&fork_args->fork_sema, 0);
 	pid = thread_create (name, PRI_DEFAULT, __do_fork, fork_args);
 	sema_down(&fork_args->fork_sema);
-
 	palloc_free_page(fork_args);
 	return pid;
 }
@@ -332,15 +345,20 @@ process_exit (void) {
   struct thread *child = thread_current ();
 
 #ifdef USERPROG
-  struct fd_table *fd_table;
+	struct fd_table *fd_table;
 	if (child->is_process) {
+		
 		fd_table = get_user_fd(child);
-
 		for(int i = 2; i < FD_MAX_SIZE; i++)
 			if(is_occupied(fd_table,i))
 				file_close(fd_table->fd_array[i]);
+
+		palloc_free_page(fd_table);
+		palloc_free_page(child->process);
+
 		sema_down(&child->kill_sema);
 		sema_up(&child->p_wait_sema);
+
 		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
 	}
 #endif
@@ -504,7 +522,13 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 	file_deny_write(file);
 	struct fd_table *table = get_user_fd(thread_current());
-	set_fd( table , find_empty_fd(table) , file);
+	int fd;
+	if( ( fd = find_empty_fd(table)) == -1 )
+	{
+		thread_current()->exit_code = -1;
+		thread_exit();
+	}
+	set_fd( table ,fd , file);
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
