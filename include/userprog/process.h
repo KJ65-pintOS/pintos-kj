@@ -14,14 +14,17 @@ void process_activate (struct thread *next);
 
 /*********************************************/
 /* file descriptor, project 2 */
+#ifdef USERPROG
 
 #include "filesys/file.h"
 #include <list.h>
 #include <string.h>
 #include "threads/synch.h"
 
+#define FD_MAX_SIZE 512
+#define FD_MIN_SIZE 0
 struct file_descriptor{
-   struct file* fd[512];
+   struct file* fd[FD_MAX_SIZE];
 };
 /*
    이거 사용하고 싶으면 가장 먼저 init_fd 해라 ㅇㅋ?
@@ -44,7 +47,7 @@ struct file_descriptor{
 
 #define get_file(struct_fd , index) (struct_fd->fd[index])
 
-
+#define free_fd(struct_fd, index) (struct_fd->fd[index] = (void*)0)
 
 // struct_fd, file should be a pointer
 #define set_fd(struct_fd, index, file ) ( struct_fd->fd[index] = file)
@@ -70,10 +73,6 @@ struct process { // 공유자원
 
 #define process_entry(list_elem) (list_entry( list_elem, struct process, elem))
 
-/* file descriptor, project 2 */
-/*********************************************/
-
-
 struct fork_args {
     struct thread *parent;
     struct intr_frame *fork_intr_frame;
@@ -81,6 +80,13 @@ struct fork_args {
     // sema
     // reason being killed
 };
+
+#endif
+/* file descriptor, project 2 */
+/*********************************************/
+
+
+
 
 
 #endif /* userprog/process.h */

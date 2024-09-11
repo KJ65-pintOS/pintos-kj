@@ -37,23 +37,37 @@ static void __do_fork (void *);
 
 
 /***********************************************************************/
+/* userprogram, project 2 */
+#ifdef USERPROG 
 
 #define ALIGNMENT sizeof(char *)
-static void setup_argument(struct intr_frame* if_, const char* file_name);
+
+static void 
+setup_argument(struct intr_frame* if_, const char* file_name);
 static void 
 set_connection(struct thread *t, struct process *p);
+static char*
+f_name_to_t_name(const char *file_name, char *t_name);
 
+
+// make connections thread with process
+static void 
+set_connection(struct thread *t, struct process *p)
+{
+	list_push_back(&p->threads, &t->p_elem); // 스레드에 Process 관련 list_elem 추가
+	t->process = p;
+}
+#endif
+/* userprogram, project 2 */
 /***********************************************************************/
 
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
 	struct thread *current = thread_current ();
+
+#ifdef USERPROG 
 	struct process *p = palloc_get_page(PAL_USER);
-	/*
-	if (p == NULL)
-		return TID_ERROR;
-	*/
 
 	/* lock init part */
 	lock_init(&p->fd_lock);
@@ -68,17 +82,9 @@ process_init (void) {
 	
 	/* make connection thread with process */
 	set_connection(current,p);
-}
-// make connections thread with process
-static void 
-set_connection(struct thread *t, struct process *p)
-{
-	list_push_back(&p->threads, &t->p_elem); // 스레드에 Process 관련 list_elem 추가
-	t->process = p;
+#endif
 }
 
-//void setup_arguments(const char *file_name, struct intr_frame *if_);
-static char *f_name_to_t_name(const char *file_name, char *t_name);
 /* General process initializer for initd and other process. */
 
 /* Starts the first userland program, called "initd", loaded from FILE_NAME.
@@ -433,12 +439,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	int i;
 
 	/*****************************************************************/
+	/* Argument passing, project 2 */
 	//todo filename 의 값이 제대로 복사되지 않고 있음. strcpy등으로 복사해서 저장하자.
+#ifdef USERPROG 
 	char* argv;
 	argv = strchr(file_name,' '); //file name 뒤를 짜름.
 	if(argv != NULL)
 		*argv = '\0';
-
+#endif
+	/* Argument passing, project 2 */
 	/*****************************************************************/
 
 	/* Allocate and activate page directory. */
@@ -454,9 +463,16 @@ load (const char *file_name, struct intr_frame *if_) {
 		- rip -> user process entry point addr
 	*/
 	// travers string and set argc
+
+	/*****************************************************************/
+	/* Argument passing, project 2 */
+#ifdef USERPROG 
 	char *space_ptr = strchr(file_name, ' ');
 	if (space_ptr != NULL)
 		*space_ptr = '\0';
+#endif 
+	/* Argument passing, project 2 */
+	/*****************************************************************/
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
@@ -534,23 +550,17 @@ load (const char *file_name, struct intr_frame *if_) {
 	if (!setup_stack (if_))
 		goto done;
 
-	/*****************************************************************/
 	/* Set up arguments */
+#ifdef USERPROG
+
 	if(argv != NULL)
 		*argv = ' ';
 	setup_argument(if_, file_name);
 
-
-	/*****************************************************************/
-
+#endif
 
 	/* Start address. */
-	if_->rip = ehdr.e_entry;
-
-	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
-  
+	if_->rip = ehdr.e_entry;  
 	success = true;
 
 done:
@@ -558,7 +568,13 @@ done:
 	file_close (file);
 	return success;
 }
-static void setup_argument(struct intr_frame* if_, const char* file_name)
+
+/**********************************************************************/
+/* argument passing, project 2 */
+#ifdef USERPROG 
+
+static void 
+setup_argument(struct intr_frame* if_, const char* file_name)
 {	
 	char *token, *save_ptr, *argv[64];
 	uint32_t argv_size;
@@ -615,6 +631,19 @@ int find_empty_fd(struct file_descriptor * fd)
     return -1;
 }
 
+static char *f_name_to_t_name(const char *file_name, char *t_name) {
+	size_t size = strlen(file_name) + 1; // include null terminator
+	char *space_ptr = strchr(file_name, ' ');
+	if (space_ptr != NULL){
+		size = space_ptr - file_name + 1;
+	}
+		strlcpy(t_name, file_name, size);
+	return t_name;
+}
+
+#endif
+/* argument passing, project 2 */
+/**********************************************************************/
 
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
@@ -760,15 +789,7 @@ install_page (void *upage, void *kpage, bool writable) {
 			&& pml4_set_page (t->pml4, upage, kpage, writable));
 }
 
-static char *f_name_to_t_name(const char *file_name, char *t_name) {
-	size_t size = strlen(file_name) + 1; // include null terminator
-	char *space_ptr = strchr(file_name, ' ');
-	if (space_ptr != NULL){
-		size = space_ptr - file_name + 1;
-	}
-		strlcpy(t_name, file_name, size);
-	return t_name;
-}
+
 #else
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the

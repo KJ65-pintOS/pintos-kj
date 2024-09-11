@@ -883,6 +883,8 @@ mlfqs_set_priority(struct thread* t)
 /* advanced scheduling, project 1 */
 /*****************************************************************/
 /* user program, project 2 */
+#ifdef USERPROG
+
 struct thread *get_child_by_id(tid_t child_tid) {
 	struct thread *parent = thread_current();
 	struct list children_list = parent->process_children;
@@ -899,9 +901,12 @@ struct thread *get_child_by_id(tid_t child_tid) {
 	return child;
 }
 
+
 void init_process_wait_info() {
 	struct thread *parent = thread_current();
 	parent->is_process = true;
 }
+
+#endif
 /* user program, project 2 */
 /*****************************************************************/

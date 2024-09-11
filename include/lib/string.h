@@ -25,8 +25,15 @@ size_t strlcat (char *, const char *, size_t);
 char *strtok_r (char *, const char *, char **);
 size_t strnlen (const char *, size_t);
 
-/* Customs */
+/************************************/
+/* userprogram, project 2 */
+#ifdef USERPROG
+
 void remove_extra_spaces(char *str);
+
+#endif
+/* userprogram, project 2 */
+/************************************/
 
 /* Try to be helpful. */
 #define strcpy dont_use_strcpy_use_strlcpy

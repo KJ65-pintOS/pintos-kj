@@ -133,14 +133,18 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
-	/* process include 안했는데 왜 됨? */
-	struct process *process;
-	struct list_elem p_elem;
+	
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 
 	uint64_t *pml4;                     /* Page map level 4 */
+
+
+	/* process include 안했는데 왜 됨? */
+	struct process *process;
+	struct list_elem p_elem;
+	
 	struct semaphore p_wait_sema;
 	struct list process_children;
 	struct list_elem p_child_elem;
@@ -256,8 +260,16 @@ typedef int ffloat;
 /* mlfqs scheduling, project 1 */
 /***************************************************/
 /* user program, project 2 */
+#ifdef USERPROG
+
 #define KILLED 999999
 void init_process_wait_info();
 struct thread *get_child_by_id(tid_t child_tid);
+
+
+#endif
+
+/* user program, project 2 */
+/***************************************************/
 
 #endif /* threads/thread.h */

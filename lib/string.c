@@ -345,6 +345,10 @@ strlcat (char *dst, const char *src, size_t size) {
 	return src_len + dst_len;
 }
 
+/********************************************/
+/* userprogram, project 2 */
+#ifdef USERPROG
+
 void remove_extra_spaces(char *str) {
     int i = 0, j = 0;
     int space_flag = 0;
@@ -372,3 +376,7 @@ void remove_extra_spaces(char *str) {
     
     str[j] = '\0'; // 최종 문자열 종료
 }
+
+#endif 
+/* userprogram, project 2 */
+/********************************************/
