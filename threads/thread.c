@@ -159,7 +159,9 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
-
+#ifdef USERPROG
+	list_init(&initial_thread->process_children);
+#endif
 	if(thread_mlfqs)
 	{
 		// mlfqs
@@ -269,6 +271,15 @@ thread_create (const char *name, int priority,
 		t->nice = thread_get_nice(); // 상속
 		t->recent_cpu = thread_current()->recent_cpu;
 	}
+#ifdef USERPROG
+	list_init(&t->process_children);
+	struct thread *parent = thread_current();
+	if (parent->is_process == true) {
+		t->is_process = true;
+		sema_init(&t->p_wait_sema, 0); // child sema init
+		list_push_back(&(parent->process_children), &t->p_child_elem); // put child elem into children list of parent
+	}
+#endif
 
 	/* Add to run queue. */
 	thread_unblock (t);
@@ -475,7 +486,6 @@ init_thread (struct thread *t, const char *name, int priority) {
 	ASSERT (t != NULL);
 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT (name != NULL);
-	char* ptr;
 
 	memset (t, 0, sizeof *t);
 	t->status = THREAD_BLOCKED;
@@ -751,6 +761,7 @@ thread_event(void)
 			intr_yield_on_return();
 		else
 			thread_yield();
+
 }
 
 
@@ -770,7 +781,7 @@ is_priority_less_than_next(int64_t p)
 	if(list_empty(&ready_list))
 		return false;
 	struct thread *front = thread_entry(list_front(&ready_list));
-	return (p <= thread_get_priority_any(front));
+	return (p < thread_get_priority_any(front));
 }
 
 
@@ -870,4 +881,27 @@ mlfqs_set_priority(struct thread* t)
 
 
 /* advanced scheduling, project 1 */
+/*****************************************************************/
+/* user program, project 2 */
+struct thread *get_child_by_id(tid_t child_tid) {
+	struct thread *parent = thread_current();
+	struct list children_list = parent->process_children;
+	struct list_elem *e;
+	struct thread *child = NULL;
+	if (!list_empty(&parent->process_children)) {
+		for (e = list_begin (&children_list); e != list_end (&children_list); e = list_next (e)) {
+			child = list_entry(e, struct thread, p_child_elem);
+			ASSERT(is_thread(child));
+			if (child->tid == child_tid)
+				break;
+		}
+	}
+	return child;
+}
+
+void init_process_wait_info() {
+	struct thread *parent = thread_current();
+	parent->is_process = true;
+}
+/* user program, project 2 */
 /*****************************************************************/
