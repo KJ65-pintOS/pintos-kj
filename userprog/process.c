@@ -618,14 +618,14 @@ setup_argument(struct intr_frame* if_, const char* file_name)
 
 }
 
-int find_empty_fd(struct file_descriptor * fd)
+int find_empty_fd(struct fd_table * fd)
 {   
     ASSERT(fd != NULL)
     if(fd == NULL)
         return -1;
     for(int i = 0; i < 512; i++ )
     {
-        if( fd->fd[i] == 0)
+        if( fd->fd_array[i] == 0)
             return i;
     }
     return -1;

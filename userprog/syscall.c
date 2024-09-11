@@ -184,8 +184,16 @@ fork_handler(struct intr_frame* f){
 
 static void
 exec_handler(struct intr_frame* f)
-{ 
+{ 	
+	struct file * file;
+	const char* file_name; 
+	
+	file_name = f->R.rdi;
 
+	
+	file_deny_write(file);
+	fork_handler(f);
+	file_allow_write(file);
 }
 
 static void 
@@ -253,7 +261,7 @@ static void
 open_handler(struct intr_frame *f)
 {
 	char* file_name = f->R.rdi;
-	struct file_descriptor* user_fd;
+	struct fd_table* user_fd;
 	struct file *file = NULL;
 	int empty_num; 
 	/* Open executable file. */
@@ -375,7 +383,7 @@ close_handler(struct intr_frame* f)
 static struct file* 
 get_user_file(int fd)
 {
-	struct file_descriptor *user_fd = get_user_fd(thread_current());
+	struct fd_table *user_fd = get_user_fd(thread_current());
 	if(fd < FD_MIN_SIZE || fd > FD_MAX_SIZE)
 		return NULL;
 	if(is_empty(user_fd,fd))
@@ -392,6 +400,35 @@ is_vaddr_valid(void* vaddr)
 		|| vaddr == NULL);
 }
 
+
+/* Reads a byte at user virtual address UADDR.
+ * UADDR must be below KERN_BASE.
+ * Returns the byte value if successful, -1 if a segfault
+ * occurred. */
+static int64_t
+get_user (const uint8_t *uaddr) {
+    int64_t result;
+    __asm __volatile (
+    "movabsq $done_get, %0\n"
+    "movzbq %1, %0\n"
+    "done_get:\n"
+    : "=&a" (result) : "m" (*uaddr));
+    return result;
+}
+
+/* Writes BYTE to user address UDST.
+ * UDST must be below KERN_BASE.
+ * Returns true if successful, false if a segfault occurred. */
+static bool
+put_user (uint8_t *udst, uint8_t byte) {
+    int64_t error_code;
+    __asm __volatile (
+    "movabsq $done_put, %0\n"
+    "movb %b2, %1\n"
+    "done_put:\n"
+    : "=&a" (error_code), "=m" (*udst) : "q" (byte));
+    return error_code != -1;
+}
 #endif
 /* userprogram, project 2 */
 /******************************************************/

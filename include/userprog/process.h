@@ -23,43 +23,43 @@ void process_activate (struct thread *next);
 
 #define FD_MAX_SIZE 512
 #define FD_MIN_SIZE 0
-struct file_descriptor{
-   struct file* fd[FD_MAX_SIZE];
+struct fd_table{
+   struct file* fd_array[FD_MAX_SIZE];
 };
 /*
    이거 사용하고 싶으면 가장 먼저 init_fd 해라 ㅇㅋ?
 */
 
 // struct_fd should be a pointer
-#define init_fd(struct_fd) ( memset(struct_fd, 0 , sizeof(struct file_descriptor))) // 이거 될지 모르겠음
+#define init_fd(struct_fd) ( memset(struct_fd, 0 , sizeof(struct fd_table))) // 이거 될지 모르겠음
 #define init_fd2(struct_fd) (memset(struct_fd, 1 , 16 ));
 // struct_fd should be a pointer
-#define is_occupied(struct_fd, index ) ( struct_fd->fd[index] != 0 )
+#define is_occupied(struct_fd, index ) ( struct_fd->fd_array[index] != 0 )
 
 // struct_fd should be a pointer
-#define is_empty(struct_fd, index) ( struct_fd->fd[index] == 0)
+#define is_empty(struct_fd, index) ( struct_fd->fd_array[index] == 0)
 
-#define is_file(struct_fd, index) (strucr_fd->fd[index] != 0 && 0) // 수정해야함.
+#define is_file(struct_fd, index) (strucr_fd->fd_array[index] != 0 && 0) // 수정해야함.
 
 #define is_valid_fd(struct_fd, index)
 
-#define get_user_fd(thread) (thread->process->fd)
+#define get_user_fd(thread) (thread->process->fd_array)
 
-#define get_file(struct_fd , index) (struct_fd->fd[index])
+#define get_file(struct_fd , index) (struct_fd->fd_array[index])
 
-#define free_fd(struct_fd, index) (struct_fd->fd[index] = (void*)0)
+#define free_fd(struct_fd, index) (struct_fd->fd_array[index] = (void*)0)
 
 // struct_fd, file should be a pointer
-#define set_fd(struct_fd, index, file ) ( struct_fd->fd[index] = file)
+#define set_fd(struct_fd, index, file ) ( struct_fd->fd_array[index] = file)
 
-int find_empty_fd(struct file_descriptor * fd);
+int find_empty_fd(struct fd_table * fd_array);
 
 
 struct process { // 공유자원 
     char name[16];
     struct list threads;
 
-    struct file_descriptor *fd;
+    struct fd_table *fd;
     struct lock fd_lock;
 
     struct list_elem elem;
@@ -67,7 +67,7 @@ struct process { // 공유자원
 
 /*
     fd_lock init 해라.
-    fd pml4 만들어라
+    fd_array pml4 만들어라
     threads list init 해라
 */
 
