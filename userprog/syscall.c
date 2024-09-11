@@ -25,6 +25,7 @@ void syscall_handler (struct intr_frame *);
 #include "string.h"
 #include "userprog/process.h"
 #include "threads/vaddr.h"
+#include "threads/palloc.h"
 
 typedef void 
 syscall_handler_func(struct intr_frame *);
@@ -121,7 +122,7 @@ syscall_init (void) {
 	syscall_handlers[SYS_HALT] = halt_handler;
 	syscall_handlers[SYS_EXIT] = exit_handler;
 	syscall_handlers[SYS_FORK] = fork_handler;
-	syscall_handlers[SYS_EXEC] =exec_handler;
+	syscall_handlers[SYS_EXEC] = exec_handler;
 	syscall_handlers[SYS_WAIT] = wait_handler;
 	syscall_handlers[SYS_CREATE] = create_handler;
 	syscall_handlers[SYS_REMOVE] = remove_hander;
@@ -185,15 +186,20 @@ fork_handler(struct intr_frame* f){
 static void
 exec_handler(struct intr_frame* f)
 { 	
-	struct file * file;
+	int fd;
+	const char *fn_copy;
 	const char* file_name; 
 	
 	file_name = f->R.rdi;
+	fn_copy =  palloc_get_page(PAL_USER);
 
-	
-	file_deny_write(file);
-	fork_handler(f);
-	file_allow_write(file);
+	if(!is_vaddr_valid(file_name) || *file_name == NULL){
+		thread_current()->exit_code = -1;
+		thread_exit();
+		NOT_REACHED();
+	}
+	strlcpy(fn_copy, file_name, strlen(file_name) + 1);
+	process_exec(fn_copy);
 }
 
 static void 
@@ -249,7 +255,7 @@ read_handler(struct intr_frame* f)
 		thread_exit(); 
 		NOT_REACHED();
 	}
-
+	struct thread* t = thread_current();
 	if((file = get_user_file(fd))== NULL){
 		f->R.rax = -1;
 		return;
