@@ -41,7 +41,7 @@ static void __do_fork (void *);
 #define ALIGNMENT sizeof(char *)
 
 static void setup_argument(struct intr_frame* if_, const char* file_name);
-static void remove_extra_spaces(char *str);
+
 static void 
 set_connection(struct thread *t, struct process *p);
 
@@ -79,7 +79,6 @@ set_connection(struct thread *t, struct process *p)
 	t->process = p;
 }
 
-//void setup_arguments(const char *file_name, struct intr_frame *if_);
 static char *f_name_to_t_name(const char *file_name, char *t_name);
 /* General process initializer for initd and other process. */
 
@@ -548,14 +547,6 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
-
-	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
-	if (space_ptr != NULL)
-		*space_ptr = ' ';
-	setup_arguments(file_name, if_);
-  
 	success = true;
 
 done:
@@ -606,33 +597,7 @@ static void setup_argument(struct intr_frame* if_, const char* file_name)
 	memset(if_->rsp, 0, ALIGNMENT);
 
 }
-static void remove_extra_spaces(char *str) {
-    int i = 0, j = 0;
-    int space_flag = 0;
-    
-    while (str[i] != '\0') {
-        // 현재 문자가 공백(' ')일 경우
-        if (str[i] == ' ') {
-            if (!space_flag) {
-                // 공백이 처음 나타나면 공백을 복사
-                str[j++] = ' ';
-                space_flag = 1;
-            }
-        } else {
-            // 공백이 아닌 문자가 나오면 플래그를 초기화하고 문자 복사
-            str[j++] = str[i];
-            space_flag = 0;
-        }
-        i++;
-    }
-    
-    // 마지막에 남은 공백 제거
-    if (j > 0 && str[j-1] == ' ') {
-        j--;
-    }
-    
-    str[j] = '\0'; // 최종 문자열 종료
-}
+
 int find_empty_fd(struct file_descriptor * fd)
 {   
     ASSERT(fd != NULL)

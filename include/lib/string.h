@@ -26,7 +26,7 @@ char *strtok_r (char *, const char *, char **);
 size_t strnlen (const char *, size_t);
 
 /* Customs */
-char* remove_extra_spaces(char* str);
+void remove_extra_spaces(char *str);
 
 /* Try to be helpful. */
 #define strcpy dont_use_strcpy_use_strlcpy
