@@ -22,7 +22,7 @@ filesys_init (bool format) {
 		PANIC ("hd0:1 (hdb) not present, file system initialization failed");
 
 	inode_init ();
-
+	
 #ifdef EFILESYS
 	fat_init ();
 

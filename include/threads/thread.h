@@ -8,7 +8,9 @@
 #ifdef VM
 #include "vm/vm.h"
 #endif
-
+#ifdef USERPROG
+#include "synch.h"
+#endif
 
 /* States in a thread's life cycle. */
 enum thread_status {
@@ -85,6 +87,7 @@ typedef int tid_t;
  * only because they are mutually exclusive: only a thread in the
  * ready state is on the run queue, whereas only a thread in the
  * blocked state is on a semaphore wait list. */
+
 struct thread {
 	/* Owned by thread.c. */
 	tid_t tid;                          /* Thread identifier. */
@@ -131,9 +134,24 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 
 	
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
+
 	uint64_t *pml4;                     /* Page map level 4 */
+
+
+	/* process include 안했는데 왜 됨? */
+	struct process *process;
+	struct list_elem p_elem;
+	
+	struct semaphore p_wait_sema;
+	struct list process_children;
+	struct list_elem p_child_elem;
+	bool is_process;
+	int exit_code;
+	// 자식 process는 부모 process가 wait할 때까지 자식은 자원을 반환(destroyed)하면 안됨. 이를 위한 sema 중요
+
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -241,6 +259,17 @@ typedef int ffloat;
 
 /* mlfqs scheduling, project 1 */
 /***************************************************/
-/* custom */
+/* user program, project 2 */
+#ifdef USERPROG
+
+#define KILLED 999999
+void init_process_wait_info();
+struct thread *get_child_by_id(tid_t child_tid);
+
+
+#endif
+
+/* user program, project 2 */
+/***************************************************/
 
 #endif /* threads/thread.h */
