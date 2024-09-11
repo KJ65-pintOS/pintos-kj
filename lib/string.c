@@ -345,31 +345,30 @@ strlcat (char *dst, const char *src, size_t size) {
 	return src_len + dst_len;
 }
 
-/* Customs */
-char* remove_extra_spaces(char* str) {
-    if (str == NULL) return NULL;
-
-    size_t len = strlen(str);
-    size_t read = 0, write = 0;
-    int space_found = 0;
-
-    while (read < len) {
-        if (str[read] != ' ') {
-            str[write++] = str[read];
-            space_found = 0;
-        } else if (!space_found) {
-            str[write++] = ' ';
-            space_found = 1;
+void remove_extra_spaces(char *str) {
+    int i = 0, j = 0;
+    int space_flag = 0;
+    
+    while (str[i] != '\0') {
+        // 현재 문자가 공백(' ')일 경우
+        if (str[i] == ' ') {
+            if (!space_flag) {
+                // 공백이 처음 나타나면 공백을 복사
+                str[j++] = ' ';
+                space_flag = 1;
+            }
+        } else {
+            // 공백이 아닌 문자가 나오면 플래그를 초기화하고 문자 복사
+            str[j++] = str[i];
+            space_flag = 0;
         }
-        read++;
+        i++;
     }
-
-    // 문자열 끝에 공백이 있다면 제거
-    if (write > 0 && str[write - 1] == ' ') {
-        write--;
+    
+    // 마지막에 남은 공백 제거
+    if (j > 0 && str[j-1] == ' ') {
+        j--;
     }
-
-    str[write] = '\0';  // 새로운 문자열의 끝을 표시
-
-    return str;
+    
+    str[j] = '\0'; // 최종 문자열 종료
 }
