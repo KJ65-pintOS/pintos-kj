@@ -135,13 +135,16 @@ tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	struct thread *parent = thread_current();
-	
 	struct fork_args *fork_args = palloc_get_page(0);
+	tid_t pid;
+
 	fork_args->parent = parent;
 	fork_args->fork_intr_frame = if_;
+
 	sema_init(&fork_args->fork_sema, 0);
-	tid_t pid = thread_create (name, PRI_DEFAULT, __do_fork, fork_args);
+	pid = thread_create (name, PRI_DEFAULT, __do_fork, fork_args);
 	sema_down(&fork_args->fork_sema);
+
 	palloc_free_page(fork_args);
 	return pid;
 }
@@ -224,7 +227,15 @@ __do_fork (void *aux) {
 	 * TODO:       the resources of parent.*/
 	// Parent inherits file resources (e.g., opened file descriptor) to child
 	process_init ();
-
+	struct fd_table *fd_table;
+	//struct process* p = thread_current()->process;
+	fd_table = get_user_fd(current);
+	
+	memcpy(fd_table, get_user_fd(parent), 4096);
+	for(int i = 2; i< FD_MAX_SIZE; i++)
+		if(is_occupied(fd_table,i))
+			get_file(fd_table, i) = file_duplicate(get_file(fd_table,i));
+	
 	/* Finally, switch to the newly created process. */
 	sema_up(&fork_args->fork_sema);
 	if (succ)
@@ -317,11 +328,21 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
   struct thread *child = thread_current ();
-  
+
+#ifdef USERPROG
+  struct fd_table *fd_table;
 	if (child->is_process) {
+		fd_table = get_user_fd(child);
+
+		for(int i = 2; i < FD_MAX_SIZE; i++)
+			if(is_occupied(fd_table,i))
+				file_close(fd_table->fd_array[i]);
+
 		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
 		sema_up(&child->p_wait_sema);
+		
 	}
+#endif
 
 	process_cleanup ();
 }
@@ -480,6 +501,10 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+	file_deny_write(file);
+	struct fd_table *table = get_user_fd(thread_current());
+	set_fd( table , find_empty_fd(table) , file);
+
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -565,7 +590,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	//file_close (file);
 	return success;
 }
 

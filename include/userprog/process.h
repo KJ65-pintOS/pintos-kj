@@ -43,7 +43,7 @@ struct fd_table{
 
 #define is_valid_fd(struct_fd, index)
 
-#define get_user_fd(thread) (thread->process->fd_array)
+#define get_user_fd(thread) (thread->process->fd)
 
 #define get_file(struct_fd , index) (struct_fd->fd_array[index])
 
