@@ -58,10 +58,8 @@ int find_empty_fd(struct fd_table * fd_array);
 struct process { // 공유자원 
     char name[16];
     struct list threads;
-
     struct fd_table *fd;
     struct lock fd_lock;
-
     struct list_elem elem;
 };
 

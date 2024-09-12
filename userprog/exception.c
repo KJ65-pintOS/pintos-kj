@@ -156,6 +156,7 @@ page_fault (struct intr_frame *f) {
 	}
 	struct thread* t = thread_current();
 	/* If the fault is true fault, show info and exit. */
+	// 망할 643 번째 child가 Process 가 NULL 임.
 	printf ("Page fault at %p: %s error %s page in %s context.\n",
 			fault_addr,
 			not_present ? "not present" : "rights violation",

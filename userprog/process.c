@@ -68,8 +68,7 @@ process_init (void) {
 
 #ifdef USERPROG 
 	struct process *p;
-	if( (p =palloc_get_page(PAL_USER)) == NULL)
-	{
+	if((p =palloc_get_page(0)) == NULL){
 		thread_current()->exit_code = -1;
 		thread_exit();
 	}
@@ -80,7 +79,7 @@ process_init (void) {
 	list_init(&p->threads);
 	
 	/* make fd */
-	p->fd = palloc_get_page(PAL_USER);
+	p->fd = palloc_get_page(0);
 	if( p->fd == NULL)
 	{
 		thread_current()->exit_code = -1;
@@ -274,6 +273,7 @@ process_exec (void *f_name) {
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
+	struct thread* t = thread_current();
 	/* We first kill the current context */
 	process_cleanup ();
 
@@ -325,13 +325,14 @@ process_wait (tid_t child_tid UNUSED) {
 	if (child == NULL)
 		return -1;
 
-	sema_up(&child->kill_sema);
 	sema_down(&child->p_wait_sema);
 
 	int exit_code = child->exit_code;
 	if (exit_code == KILLED)
 		return -1;
 	list_remove(&child->p_child_elem);
+
+	sema_up(&child->kill_sema);
 	return exit_code;
 }
 
@@ -346,21 +347,20 @@ process_exit (void) {
 
 #ifdef USERPROG
 	struct fd_table *fd_table;
-	if (child->is_process) {
-		
+	
+	if (child->is_process ) {
+		sema_up(&child->p_wait_sema);
+		sema_down(&child->kill_sema);
 		fd_table = get_user_fd(child);
 		for(int i = 2; i < FD_MAX_SIZE; i++)
 			if(is_occupied(fd_table,i))
 				file_close(fd_table->fd_array[i]);
-
 		palloc_free_page(fd_table);
 		palloc_free_page(child->process);
-
-		sema_down(&child->kill_sema);
-		sema_up(&child->p_wait_sema);
-
 		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
 	}
+	
+	
 #endif
 
 	process_cleanup ();
