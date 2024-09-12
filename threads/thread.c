@@ -280,7 +280,7 @@ thread_create (const char *name, int priority,
 		sema_init(&t->kill_sema, 0);
 		list_push_back(&(parent->process_children), &t->p_child_elem); // put child elem into children list of parent
 	}
-	t->process = NULL;
+	t->process = 0x1234;
 #endif
 
 	/* Add to run queue. */
@@ -360,7 +360,7 @@ thread_tid (void) {
 void
 thread_exit (void) {
 	ASSERT (!intr_context ());
-
+	struct thread* t = thread_current();
 #ifdef USERPROG
 	process_exit ();
 #endif
