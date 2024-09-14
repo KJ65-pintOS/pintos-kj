@@ -79,8 +79,7 @@ process_init (void) {
 	list_init(&p->threads);
 	
 	/* make fd */
-	p->fd = palloc_get_page(0);
-	if( p->fd == NULL)
+	if((p->fd = palloc_get_page(0)) == NULL)
 	{
 		thread_current()->exit_code = -1;
 		thread_exit();
@@ -221,15 +220,16 @@ __do_fork (void *aux) {
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL)
 		goto error;
-
 	process_activate (current);
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
 		goto error;
 #else
-	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
+	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)){
+		palloc_free_page(parent->pml4);
 		goto error;
+	}
 #endif
 
 	/* TODO: Your code goes here.
@@ -254,6 +254,7 @@ __do_fork (void *aux) {
 		do_iret (&if_);
 error:
 	sema_up(&fork_args->fork_sema);
+	current->exit_code = -1;
 	thread_exit ();
 }
 
@@ -328,8 +329,6 @@ process_wait (tid_t child_tid UNUSED) {
 	sema_down(&child->p_wait_sema);
 
 	int exit_code = child->exit_code;
-	if (exit_code == KILLED)
-		return -1;
 	list_remove(&child->p_child_elem);
 
 	sema_up(&child->kill_sema);
@@ -349,16 +348,19 @@ process_exit (void) {
 	struct fd_table *fd_table;
 	
 	if (child->is_process ) {
+		if(child->process != NULL ){
+			fd_table = get_user_fd(child);
+			for(int i = 2; i < FD_MAX_SIZE; i++)
+				if(is_occupied(fd_table,i))
+					file_close(fd_table->fd_array[i]);
+			palloc_free_page(fd_table);
+			palloc_free_page(child->process);
+		}
 		sema_up(&child->p_wait_sema);
-		sema_down(&child->kill_sema);
-		fd_table = get_user_fd(child);
-		for(int i = 2; i < FD_MAX_SIZE; i++)
-			if(is_occupied(fd_table,i))
-				file_close(fd_table->fd_array[i]);
-		palloc_free_page(fd_table);
-		palloc_free_page(child->process);
 		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
+		sema_down(&child->kill_sema);
 	}
+	
 	
 	
 #endif
