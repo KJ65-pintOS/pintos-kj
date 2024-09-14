@@ -33,7 +33,7 @@ syscall_handler_func(struct intr_frame *);
 static syscall_handler_func 
 *syscall_handlers[25]; // 25는 총 syscall 갯수;
 
-#define get_user_fd(thread) (thread->process->fd)
+#define get_user_fd(thread) (thread->fd_table)
 
 static struct file* 
 get_user_file(int fd);

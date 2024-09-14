@@ -136,8 +136,8 @@ struct thread {
 	uint64_t *pml4;                     /* Page map level 4 */
 
 	/* process include 안했는데 왜 오류 않? */
-	struct process *process;
-	struct list_elem p_elem;
+	// struct process *process;
+	struct fd_table *fd_table;
 	
 	struct semaphore p_wait_sema;
 	struct list process_children;

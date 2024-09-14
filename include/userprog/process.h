@@ -31,8 +31,8 @@ struct fd_table{
 */
 
 // struct_fd should be a pointer
-#define init_fd(struct_fd) ( memset(struct_fd, 0 , sizeof(struct fd_table))) // 이거 될지 모르겠음
-#define init_fd2(struct_fd) (memset(struct_fd, 1 , 16 ));
+#define init_fd(struct_fd) ( {memset(struct_fd, 0 , sizeof(struct fd_table)); memset(struct_fd, 1 , 16 );}) // 이거 될지 모르겠음
+#define init_fd2(struct_fd) ();
 // struct_fd should be a pointer
 #define is_occupied(struct_fd, index ) ( struct_fd->fd_array[index] != 0 )
 
@@ -43,7 +43,7 @@ struct fd_table{
 
 #define is_valid_fd(struct_fd, index)
 
-#define get_user_fd(thread) (thread->process->fd)
+#define get_user_fd(thread) (thread->fd_table)
 
 #define get_file(struct_fd , index) (struct_fd->fd_array[index])
 
@@ -55,13 +55,13 @@ struct fd_table{
 int find_empty_fd(struct fd_table * fd_array);
 
 
-struct process { // 공유자원 
-    char name[16];
-    struct list threads;
-    struct fd_table *fd;
-    struct lock fd_lock;
-    struct list_elem elem;
-};
+// struct process { // 공유자원 
+//     char name[16];
+//     struct list threads;
+//     struct fd_table *fd;
+//     struct lock fd_lock;
+//     struct list_elem elem;
+// };
 
 /*
     fd_lock init 해라.
@@ -69,7 +69,7 @@ struct process { // 공유자원
     threads list init 해라
 */
 
-#define process_entry(list_elem) (list_entry( list_elem, struct process, elem))
+// #define process_entry(list_elem) (list_entry( list_elem, struct process, elem))
 
 struct fork_args {
     struct thread *parent;

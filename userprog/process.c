@@ -44,19 +44,11 @@ static void __do_fork (void *);
 
 static void 
 setup_argument(struct intr_frame* if_, const char* file_name);
-static void 
-set_connection(struct thread *t, struct process *p);
 static char*
 f_name_to_t_name(const char *file_name, char *t_name);
 
 
-// make connections thread with process
-static void 
-set_connection(struct thread *t, struct process *p)
-{
-	list_push_back(&p->threads, &t->p_elem); // 스레드에 Process 관련 list_elem 추가
-	t->process = p;
-}
+
 #endif
 /* userprogram, project 2 */
 /***********************************************************************/
@@ -67,28 +59,16 @@ process_init (void) {
 	struct thread *current = thread_current ();
 
 #ifdef USERPROG 
-	struct process *p;
-	if((p =palloc_get_page(0)) == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-	}
-	/* lock init part */
-	lock_init(&p->fd_lock);
-
-	/* list init part */
-	list_init(&p->threads);
-	
+	struct fd_table *fd_table;
 	/* make fd */
-	if((p->fd = palloc_get_page(0)) == NULL)
+	if((fd_table = palloc_get_page(0)) == NULL)
 	{
 		thread_current()->exit_code = -1;
 		thread_exit();
 	}
-	init_fd(p->fd);
-	init_fd2(p->fd);
-	
+	init_fd(fd_table);
+	current->fd_table = fd_table;
 	/* make connection thread with process */
-	set_connection(current,p);
 #endif
 }
 
@@ -240,7 +220,6 @@ __do_fork (void *aux) {
 	// Parent inherits file resources (e.g., opened file descriptor) to child
 	process_init ();
 	struct fd_table *fd_table;
-	//struct process* p = thread_current()->process;
 	fd_table = get_user_fd(current);
 	
 	memcpy(fd_table, get_user_fd(parent), 4096);
@@ -348,14 +327,11 @@ process_exit (void) {
 	struct fd_table *fd_table;
 	
 	if (child->is_process ) {
-		if(child->process != NULL ){
-			fd_table = get_user_fd(child);
-			for(int i = 2; i < FD_MAX_SIZE; i++)
-				if(is_occupied(fd_table,i))
-					file_close(fd_table->fd_array[i]);
-			palloc_free_page(fd_table);
-			palloc_free_page(child->process);
-		}
+		fd_table = get_user_fd(child);
+		for(int i = 2; i < FD_MAX_SIZE; i++)
+			if(is_occupied(fd_table,i))
+				file_close(fd_table->fd_array[i]);
+		palloc_free_page(fd_table);
 		sema_up(&child->p_wait_sema);
 		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
 		sema_down(&child->kill_sema);
