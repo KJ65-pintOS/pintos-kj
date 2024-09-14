@@ -360,7 +360,6 @@ thread_tid (void) {
 void
 thread_exit (void) {
 	ASSERT (!intr_context ());
-	struct thread* t = thread_current();
 #ifdef USERPROG
 	process_exit ();
 #endif

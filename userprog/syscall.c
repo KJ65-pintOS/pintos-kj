@@ -146,8 +146,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 	syscall_handler_func *handler;
 	int sys_num;
-	
+
 	sys_num = f->R.rax;
+	/* 잘못된 syscall num에 대한 예외 */
+	if( sys_num < 0 || sys_num > 25 )
+		return; 
+
 	handler = syscall_handlers[sys_num];
 	handler(f);
 
@@ -167,7 +171,9 @@ halt_handler(struct intr_frame *f){
 static void 
 exit_handler(struct intr_frame* f){
 	struct thread *current = thread_current();
-	int exit_code = f->R.rdi;
+	int exit_code;
+
+	exit_code = f->R.rdi;
 	current->exit_code = exit_code;
 	current->tf.R.rax = exit_code;
 	thread_exit();
@@ -175,10 +181,12 @@ exit_handler(struct intr_frame* f){
 
 static void 
 fork_handler(struct intr_frame* f){
- 	char *thread_name = (char *)f->R.rdi;
-	init_process_wait_info();
-	int pid = process_fork(thread_name, f);
+ 	char *thread_name;
+	int pid;
 
+	thread_name = (char *)f->R.rdi;
+	init_process_wait_info();
+	pid = process_fork(thread_name, f);
 	f->R.rax = pid;  // set fork() syscall return value as pid of child
 	// is_process = false 해주는거 고려
 }

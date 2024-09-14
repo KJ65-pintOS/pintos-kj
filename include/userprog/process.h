@@ -59,10 +59,22 @@ struct process { // 공유자원
     char name[16];
     struct list threads;
     struct fd_table *fd;
-    struct lock fd_lock;
-    struct list_elem elem;
-};
 
+    struct lock child_lock;
+    struct lock* parent_lock;
+    
+    struct list child_list;
+    struct semaphore wait;
+
+    int exit_code;
+};
+#define get_process_by_thread(t) (t->process);
+
+struct child {
+    tid_t pid;
+    int exit_code;
+    struct process* p;
+};
 /*
     fd_lock init 해라.
     fd_array pml4 만들어라

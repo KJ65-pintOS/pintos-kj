@@ -262,7 +262,6 @@ error:
  * Returns -1 on fail. */
 int
 process_exec (void *f_name) {
-	char *file_name = f_name;
 	bool success;
 
 	/* We cannot use the intr_frame in the thread structure.
@@ -273,15 +272,14 @@ process_exec (void *f_name) {
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
-	struct thread* t = thread_current();
 	/* We first kill the current context */
 	process_cleanup ();
 
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load (f_name, &_if);
 
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
+	palloc_free_page (f_name);
 	if (!success)
 		return -1;
 
@@ -328,8 +326,6 @@ process_wait (tid_t child_tid UNUSED) {
 	sema_down(&child->p_wait_sema);
 
 	int exit_code = child->exit_code;
-	if (exit_code == KILLED)
-		return -1;
 	list_remove(&child->p_child_elem);
 
 	sema_up(&child->kill_sema);
@@ -349,16 +345,19 @@ process_exit (void) {
 	struct fd_table *fd_table;
 	
 	if (child->is_process ) {
+		if(child->process != NULL ){
+			fd_table = get_user_fd(child);
+			for(int i = 2; i < FD_MAX_SIZE; i++)
+				if(is_occupied(fd_table,i))
+					file_close(fd_table->fd_array[i]);
+			palloc_free_page(fd_table);
+			palloc_free_page(child->process);
+		}
 		sema_up(&child->p_wait_sema);
-		sema_down(&child->kill_sema);
-		fd_table = get_user_fd(child);
-		for(int i = 2; i < FD_MAX_SIZE; i++)
-			if(is_occupied(fd_table,i))
-				file_close(fd_table->fd_array[i]);
-		palloc_free_page(fd_table);
-		palloc_free_page(child->process);
 		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
+		sema_down(&child->kill_sema);
 	}
+	
 	
 	
 #endif
@@ -370,6 +369,8 @@ process_exit (void) {
 static void
 process_cleanup (void) {
 	struct thread *curr = thread_current ();
+	struct process *p;
+	struct fd_table *fd_table;
 
 #ifdef VM
 	supplemental_page_table_kill (&curr->spt);
@@ -390,6 +391,16 @@ process_cleanup (void) {
 		curr->pml4 = NULL;
 		pml4_activate (NULL);
 		pml4_destroy (pml4);
+	}
+	p = get_process_by_thread(curr);
+	if( p != NULL){
+		/* 이후 멀티 스레드라면 같은 프로세스 소속 thread 를 모두 찾아서 free 해주는 로직 추가 필요 */
+		fd_table = get_user_fd(curr);
+		for(int i = 2; i < FD_MAX_SIZE; i++)
+			if(is_occupied(fd_table,i))
+				file_close(fd_table->fd_array[i]);
+		palloc_free_page(fd_table);
+		palloc_free_page(p);
 	}
 }
 

@@ -148,10 +148,10 @@ struct thread {
 	struct semaphore p_wait_sema;
 	struct list process_children;
 	struct list_elem p_child_elem;
+	struct lock process_children_lock;
+	struct lock* parent_process_lock;
 	bool is_process;
 	int exit_code;
-	// 자식 process는 부모 process가 wait할 때까지 자식은 자원을 반환(destroyed)하면 안됨. 이를 위한 sema 중요
-	struct semaphore kill_sema;
 
 #endif
 #ifdef VM
