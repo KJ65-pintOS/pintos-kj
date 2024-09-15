@@ -49,11 +49,11 @@ struct fd_table{
 
 int find_empty_fd(struct fd_table * fd_array);
 
-struct child {
+struct family {
     tid_t tid;
     bool success;
     int exit_code;
-    struct thread* thread;
+    struct thread* child;
     struct thread* parent;
     struct lock lock;
     struct semaphore sema;
