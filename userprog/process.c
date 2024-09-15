@@ -52,6 +52,8 @@ f_name_to_t_name(const char *file_name, char *t_name);
 static bool
 find_child_by_tid(struct list_elem* e_, void* aux);
 
+#define MAX_FORK_CNT 70
+static int fork_cnt = 0;
 
 #endif
 /* userprogram, project 2 */
@@ -126,6 +128,10 @@ initd (void *f_name) {
  * TID_ERROR if the thread cannot be created. */
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
+	if(fork_cnt >= MAX_FORK_CNT)
+		return -1;
+	fork_cnt++;
+
 	/* Clone current thread to new thread.*/
 	struct thread *parent = thread_current();
 	tid_t pid;
@@ -334,11 +340,13 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       implementing the process_wait. */
 	int exit_code;
 	struct child* child;
+	struct list* child_list;
+	struct list_elem * elem;
+	
+	child_list = &thread_current()->child_list;
 	
 	/* 잘못된 tid 접근 예외 */ 
-	struct list* child_list = &thread_current()->child_list;
-	struct list_elem * elem = list_find(child_list,find_child_by_tid,&child_tid);
-	if(elem == NULL)
+	if((elem = list_find(child_list,find_child_by_tid,&child_tid)) == NULL)
 		return -1;
 		
 	child = list_entry(elem, struct child, elem);	
@@ -352,9 +360,8 @@ process_wait (tid_t child_tid UNUSED) {
 	else
 		lock_release(&child->lock);
 	exit_code = child->exit_code; 
-
-	child->exit_code = -1;
-	child->thread = NULL;
+	list_remove(&child->elem);
+	free(child);
 
 	return exit_code;
 }
@@ -375,6 +382,7 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
+	fork_cnt--;
 	struct fd_table *fd_table;
 	struct thread* t;
 
