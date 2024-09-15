@@ -175,12 +175,12 @@ exit_handler(struct intr_frame* f){
 
 static void 
 fork_handler(struct intr_frame* f){
- 	char *thread_name = (char *)f->R.rdi;
-	thread_current()->is_process = true;
-	int pid = process_fork(thread_name, f);
+ 	char *thread_name;
+	int pid;
 
-	f->R.rax = pid;  // set fork() syscall return value as pid of child
-	// is_process = false 해주는거 고려
+	thread_name = (char *)f->R.rdi;
+	pid = process_fork(thread_name, f);
+	f->R.rax = pid;
 }
 
 static void
@@ -207,7 +207,6 @@ wait_handler(struct intr_frame* f)
 {
  	int pid = (int)f->R.rdi;
 	int exit_code = process_wait(pid);
-
 	f->R.rax = exit_code;
 }
 

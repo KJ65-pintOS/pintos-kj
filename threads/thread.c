@@ -162,7 +162,9 @@ thread_init (void) {
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
 	initial_thread->is_process = false;
-	
+
+	//initial_thread->pml4 = NULL;
+
 	list_init(&initial_thread->child_list);
 
 	if(thread_mlfqs)
@@ -280,11 +282,14 @@ thread_create (const char *name, int priority,
 	
 	curr = thread_current();
 	list_init(&t->child_list);
-
+ 
 	child = malloc(sizeof(struct child));
 	child->tid = t->tid;
 	child->thread = t;
 	child->exit_code = NULL;
+	child->success = false;
+	child->parent = curr;
+
 	lock_init(&child->lock);
 	sema_init(&child->sema,0);
 
@@ -374,12 +379,33 @@ thread_exit (void) {
 	ASSERT (!intr_context ());
 	struct thread* t = thread_current();
 #ifdef USERPROG
-	
+	struct list * child_list = &t->child_list;
+	struct child* child;
+	struct list_elem *elem;
+
+	/* free all child */
+	while(!list_empty(child_list))
+	{	
+		elem = list_front(child_list);
+		child = list_entry(elem,struct child, elem);
+		list_remove(elem);
+		free(child);
+	}
+
+	/* notice to parent */
+	if(t != initial_thread){
+		child = t->whos;
+		lock_acquire(&child->lock);
+		child->exit_code = t->exit_code;
+		child->thread = NULL; 
+		lock_release(&child->lock);
+		sema_up(&child->sema);
+	}
 	process_exit ();
 #endif
 
 	/* Just set our status to dying and schedule another process.
-	   We will be destroyed during the call to schedule_tail(). */
+   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
@@ -422,7 +448,6 @@ void
 thread_set_nice (int nice UNUSED) {
 	/* TODO: Your implementation goes here */
 	thread_current()->nice = nice;
-	// mlfqs_reset_prt();
 }
 
 /* Returns the current thread's nice value. */

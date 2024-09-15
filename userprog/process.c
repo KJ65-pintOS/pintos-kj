@@ -116,6 +116,7 @@ initd (void *f_name) {
 #endif
 	
 	process_init ();
+
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -127,21 +128,30 @@ tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	struct thread *parent = thread_current();
-	struct fork_args *fork_args;
-
-	if((fork_args = palloc_get_page(0)) == NULL){
-		return -1;
-	}
-
 	tid_t pid;
 
-	fork_args->parent = parent;
-	fork_args->fork_intr_frame = if_;
+	pid = thread_create (name, PRI_DEFAULT, __do_fork, if_);
+	
+	/* test here */
+	struct list_elem * elem = list_find(&parent->child_list,find_child_by_tid,&pid);
+	if(elem == NULL)
+		return -1;
+	struct child *child = list_entry(elem,struct child, elem);
 
-	sema_init(&fork_args->fork_sema, 0);
-	pid = thread_create (name, PRI_DEFAULT, __do_fork, fork_args);
-	sema_down(&fork_args->fork_sema);
-	palloc_free_page(fork_args);
+	
+	lock_acquire(&child->lock);
+	struct thread * t = child->thread;
+
+	if(!child->success){ /* 아직 생성중인 경우*/
+		lock_release(&child->lock);
+		sema_down(&child->sema);
+	}
+	else
+		lock_release(&child->lock);
+
+	if(!child->success)
+		pid = TID_ERROR;
+
 	return pid;
 }
 
@@ -191,14 +201,16 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 static void
 __do_fork (void *aux) {
 	struct intr_frame if_;
-	struct fork_args *fork_args = (struct fork_args *)aux; 
 	struct thread *current = thread_current ();
-	struct thread *parent = fork_args->parent;
+	struct thread *parent = current->whos->parent;
+	struct child* whos;
+
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-	struct intr_frame *parent_if = fork_args->fork_intr_frame;
+	
 	bool succ = true;
 	/* 1. Read the cpu context to local stack. */
-	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	
+	memcpy (&if_, (struct intr_frame*)aux, sizeof (struct intr_frame));
 	if_.R.rax = 0; // set return value of child to zero
 
 	/* 2. Duplicate PT */
@@ -212,7 +224,6 @@ __do_fork (void *aux) {
 		goto error;
 #else
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)){
-		palloc_free_page(parent->pml4);
 		goto error;
 	}
 #endif
@@ -225,19 +236,35 @@ __do_fork (void *aux) {
 	// Parent inherits file resources (e.g., opened file descriptor) to child
 	process_init ();
 	struct fd_table *fd_table;
+
 	fd_table = get_user_fd(current);
-	
 	memcpy(fd_table, get_user_fd(parent), 4096);
 	for(int i = 2; i< FD_MAX_SIZE; i++)
 		if(is_occupied(fd_table,i))
 			get_file(fd_table, i) = file_duplicate(get_file(fd_table,i));
 	
+
+
 	/* Finally, switch to the newly created process. */
-	sema_up(&fork_args->fork_sema);
+
+	whos = current->whos;
+	lock_acquire(&whos->lock);
+	whos->success = true;
+	lock_release(&whos->lock);
+	sema_up(&whos->sema);
+
 	if (succ)
 		do_iret (&if_);
 error:
-	sema_up(&fork_args->fork_sema);
+	
+
+	whos = current->whos;
+	lock_acquire(&whos->lock);
+	whos->success = false;
+	lock_release(&whos->lock);
+	sema_up(&whos->sema);
+
+	
 	current->exit_code = -1;
 	thread_exit ();
 }
@@ -325,7 +352,10 @@ process_wait (tid_t child_tid UNUSED) {
 	else
 		lock_release(&child->lock);
 	exit_code = child->exit_code; 
+
 	child->exit_code = -1;
+	child->thread = NULL;
+
 	return exit_code;
 }
 static bool
@@ -345,48 +375,23 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-	
-	struct thread *t;
 	struct fd_table *fd_table;
-	struct list * child_list;
-	struct child* child;
-	struct list_elem *elem;
+	struct thread* t;
 
 	t = thread_current();
-	child_list = &t->child_list;
-	/* exception for kernel */
-	if(!t->is_process)
-	{
-		process_cleanup();
+	/* exception for a thread that is not process */
+	if(t->pml4 == NULL)
 		return;
-	}
-
+	
 	/* free fd_table */
 	fd_table = get_user_fd(t);
-	for(int i = 2; i < FD_MAX_SIZE; i++)
-		if(is_occupied(fd_table,i))
-			file_close(fd_table->fd_array[i]);
-	palloc_free_page(fd_table);
-
-	/* free all child */
-	while(!list_empty(child_list))
-	{	
-		elem = list_front(child_list);
-		child = list_entry(elem,struct child, elem);
-		list_remove(elem);
-		free(child);
+	if(fd_table != NULL){
+		for(int i = 2; i < FD_MAX_SIZE; i++)
+			if(is_occupied(fd_table,i))
+				file_close(fd_table->fd_array[i]);
+		palloc_free_page(fd_table);
 	}
-	
-	/* notice to parent */
-	child = t->whos;
-	lock_acquire(&child->lock);
-	child->exit_code = t->exit_code;
-	child->thread = NULL; 
-	lock_release(&child->lock);
-	sema_up(&child->sema);
-
 	printf ("%s: exit(%d)\n", t->name, t->exit_code); // process name & exit code
-
 	process_cleanup ();
 }
 

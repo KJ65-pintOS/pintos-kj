@@ -51,20 +51,15 @@ int find_empty_fd(struct fd_table * fd_array);
 
 struct child {
     tid_t tid;
+    bool success;
     int exit_code;
     struct thread* thread;
+    struct thread* parent;
     struct lock lock;
     struct semaphore sema;
     struct list_elem elem;
 };
 
-struct fork_args {
-    struct thread *parent;
-    struct intr_frame *fork_intr_frame;
-    struct semaphore fork_sema;
-    // sema
-    // reason being killed
-};
 
 #endif
 /* file descriptor, project 2 */
