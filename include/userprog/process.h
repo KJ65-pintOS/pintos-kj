@@ -26,16 +26,12 @@ void process_activate (struct thread *next);
 struct fd_table{
    struct file* fd_array[FD_MAX_SIZE];
 };
-/*
-   이거 사용하고 싶으면 가장 먼저 init_fd 해라 ㅇㅋ?
-*/
 
-// struct_fd should be a pointer
+
 #define init_fd(struct_fd) ( {memset(struct_fd, 0 , sizeof(struct fd_table)); memset(struct_fd, 1 , 16 );})
-// struct_fd should be a pointer
+
 #define is_occupied(struct_fd, index ) ( struct_fd->fd_array[index] != 0 )
 
-// struct_fd should be a pointer
 #define is_empty(struct_fd, index) ( struct_fd->fd_array[index] == 0)
 
 #define is_file(struct_fd, index) (strucr_fd->fd_array[index] != 0 && 0) // 수정해야함.
@@ -53,15 +49,14 @@ struct fd_table{
 
 int find_empty_fd(struct fd_table * fd_array);
 
-
-
-
-/*
-    fd_lock init 해라.
-    fd_array pml4 만들어라
-    threads list init 해라
-*/
-
+struct child {
+    tid_t tid;
+    int exit_code;
+    struct thread* thread;
+    struct lock lock;
+    struct semaphore sema;
+    struct list_elem elem;
+};
 
 struct fork_args {
     struct thread *parent;

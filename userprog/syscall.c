@@ -176,7 +176,7 @@ exit_handler(struct intr_frame* f){
 static void 
 fork_handler(struct intr_frame* f){
  	char *thread_name = (char *)f->R.rdi;
-	init_process_wait_info();
+	thread_current()->is_process = true;
 	int pid = process_fork(thread_name, f);
 
 	f->R.rax = pid;  // set fork() syscall return value as pid of child

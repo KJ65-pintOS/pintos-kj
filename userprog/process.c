@@ -23,6 +23,9 @@
 #include "vm/vm.h"
 #endif
 
+#include "threads/malloc.h"
+
+
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT sizeof(char *)
 
@@ -46,7 +49,8 @@ static void
 setup_argument(struct intr_frame* if_, const char* file_name);
 static char*
 f_name_to_t_name(const char *file_name, char *t_name);
-
+static bool
+find_child_by_tid(struct list_elem* e_, void* aux);
 
 
 #endif
@@ -59,6 +63,7 @@ process_init (void) {
 	struct thread *current = thread_current ();
 
 #ifdef USERPROG 
+	current->is_process = true;
 	struct fd_table *fd_table;
 	/* make fd */
 	if((fd_table = palloc_get_page(0)) == NULL)
@@ -92,7 +97,7 @@ process_create_initd (const char *file_name) {
 	strlcpy (fn_copy, file_name, PGSIZE);
 
 	/* set wait_info for child process */
-	init_process_wait_info();
+	thread_current()->is_process = true;
 
 	char t_name[16];
 	f_name_to_t_name(file_name, t_name);
@@ -300,19 +305,38 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	struct thread *parent = thread_current();
-	struct thread *child = get_child_by_id(child_tid);
-	if (child == NULL)
+	int exit_code;
+	struct child* child;
+	
+	/* 잘못된 tid 접근 예외 */ 
+	struct list* child_list = &thread_current()->child_list;
+	struct list_elem * elem = list_find(child_list,find_child_by_tid,&child_tid);
+	if(elem == NULL)
 		return -1;
-
-	sema_down(&child->p_wait_sema);
-
-	int exit_code = child->exit_code;
-	list_remove(&child->p_child_elem);
-
-	sema_up(&child->kill_sema);
+		
+	child = list_entry(elem, struct child, elem);	
+	lock_acquire(&child->lock);
+	/* 만약 thread가 진행중이라면 */
+	if(child->thread != NULL){
+		lock_release(&child->lock);
+		sema_down(&child->sema);
+	}
+	/* Thread가 terminated 된 경우 */
+	else
+		lock_release(&child->lock);
+	exit_code = child->exit_code; 
+	child->exit_code = -1;
 	return exit_code;
 }
+static bool
+find_child_by_tid(struct list_elem* e_, void* aux)
+{
+	struct child* c = list_entry(e_, struct child, elem);
+	tid_t tid = *(tid_t*)aux;
+	return c->tid == tid;
+}
+
+
 
 /* Exit the process. This function is called by thread_exit (). */
 void
@@ -321,25 +345,47 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-  struct thread *child = thread_current ();
-
-#ifdef USERPROG
-	struct fd_table *fd_table;
 	
-	if (child->is_process ) {
-		fd_table = get_user_fd(child);
-		for(int i = 2; i < FD_MAX_SIZE; i++)
-			if(is_occupied(fd_table,i))
-				file_close(fd_table->fd_array[i]);
-		palloc_free_page(fd_table);
-		sema_up(&child->p_wait_sema);
-		printf ("%s: exit(%d)\n", child->name, child->exit_code); // process name & exit code
-		sema_down(&child->kill_sema);
+	struct thread *t;
+	struct fd_table *fd_table;
+	struct list * child_list;
+	struct child* child;
+	struct list_elem *elem;
+
+	t = thread_current();
+	child_list = &t->child_list;
+	/* exception for kernel */
+	if(!t->is_process)
+	{
+		process_cleanup();
+		return;
+	}
+
+	/* free fd_table */
+	fd_table = get_user_fd(t);
+	for(int i = 2; i < FD_MAX_SIZE; i++)
+		if(is_occupied(fd_table,i))
+			file_close(fd_table->fd_array[i]);
+	palloc_free_page(fd_table);
+
+	/* free all child */
+	while(!list_empty(child_list))
+	{	
+		elem = list_front(child_list);
+		child = list_entry(elem,struct child, elem);
+		list_remove(elem);
+		free(child);
 	}
 	
-	
-	
-#endif
+	/* notice to parent */
+	child = t->whos;
+	lock_acquire(&child->lock);
+	child->exit_code = t->exit_code;
+	child->thread = NULL; 
+	lock_release(&child->lock);
+	sema_up(&child->sema);
+
+	printf ("%s: exit(%d)\n", t->name, t->exit_code); // process name & exit code
 
 	process_cleanup ();
 }

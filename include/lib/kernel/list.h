@@ -160,4 +160,8 @@ void list_unique (struct list *, struct list *duplicates,
 struct list_elem *list_max (struct list *, list_less_func *, void *aux);
 struct list_elem *list_min (struct list *, list_less_func *, void *aux);
 
+typedef bool list_find_func(struct list_elem* elem, void* aux);
+struct list_elem *
+list_find (struct list *list, list_find_func *find, void *aux) ;
+
 #endif /* lib/kernel/list.h */

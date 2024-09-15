@@ -137,14 +137,12 @@ struct thread {
 
 	/* process include 안했는데 왜 오류 않? */
 	struct fd_table *fd_table;
-	
-	struct semaphore p_wait_sema;
-	struct list process_children;
-	struct list_elem p_child_elem;
+	struct list child_list;
+	struct child* whos;
 	bool is_process;
 	int exit_code;
 	// 자식 process는 부모 process가 wait할 때까지 자식은 자원을 반환(destroyed)하면 안됨. 이를 위한 sema 중요
-	struct semaphore kill_sema;
+
 
 #endif
 #ifdef VM
@@ -257,8 +255,7 @@ typedef int ffloat;
 #ifdef USERPROG
 
 #define KILLED 999999
-void init_process_wait_info();
-struct thread *get_child_by_id(tid_t child_tid);
+
 
 
 #endif

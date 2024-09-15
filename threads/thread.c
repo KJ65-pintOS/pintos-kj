@@ -11,8 +11,10 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "threads/malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -159,9 +161,10 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
-#ifdef USERPROG
-	list_init(&initial_thread->process_children);
-#endif
+	initial_thread->is_process = false;
+	
+	list_init(&initial_thread->child_list);
+
 	if(thread_mlfqs)
 	{
 		// mlfqs
@@ -272,14 +275,24 @@ thread_create (const char *name, int priority,
 		t->recent_cpu = thread_current()->recent_cpu;
 	}
 #ifdef USERPROG
-	list_init(&t->process_children);
-	struct thread *parent = thread_current();
-	if (parent->is_process == true) {
-		t->is_process = true;
-		sema_init(&t->p_wait_sema, 0); // child sema init
-		sema_init(&t->kill_sema, 0);
-		list_push_back(&(parent->process_children), &t->p_child_elem); // put child elem into children list of parent
-	}
+	struct thread *curr;
+	struct child* child;
+	
+	curr = thread_current();
+	list_init(&t->child_list);
+
+	child = malloc(sizeof(struct child));
+	child->tid = t->tid;
+	child->thread = t;
+	child->exit_code = NULL;
+	lock_init(&child->lock);
+	sema_init(&child->sema,0);
+
+	t->is_process = false;
+	t->whos = child;
+
+	list_push_back(&curr->child_list, &child->elem);
+	
 #endif
 
 	/* Add to run queue. */
@@ -361,6 +374,7 @@ thread_exit (void) {
 	ASSERT (!intr_context ());
 	struct thread* t = thread_current();
 #ifdef USERPROG
+	
 	process_exit ();
 #endif
 
@@ -886,27 +900,6 @@ mlfqs_set_priority(struct thread* t)
 /* user program, project 2 */
 #ifdef USERPROG
 
-struct thread *get_child_by_id(tid_t child_tid) {
-	struct thread *parent = thread_current();
-	struct list children_list = parent->process_children;
-	struct list_elem *e;
-	struct thread *child = NULL;
-	if (!list_empty(&parent->process_children)) {
-		for (e = list_begin (&children_list); e != list_end (&children_list); e = list_next (e)) {
-			child = list_entry(e, struct thread, p_child_elem);
-			ASSERT(is_thread(child));
-			if (child->tid == child_tid)
-				break;
-		}
-	}
-	return child;
-}
-
-
-void init_process_wait_info() {
-	struct thread *parent = thread_current();
-	parent->is_process = true;
-}
 
 #endif
 /* user program, project 2 */
