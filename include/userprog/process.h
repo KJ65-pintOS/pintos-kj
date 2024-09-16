@@ -29,22 +29,13 @@ struct fd_table{
 
 
 #define init_fd(struct_fd) ( {memset(struct_fd, 0 , sizeof(struct fd_table)); memset(struct_fd, 1 , 16 );})
-
 #define is_occupied(struct_fd, index ) ( struct_fd->fd_array[index] != 0 )
-
 #define is_empty(struct_fd, index) ( struct_fd->fd_array[index] == 0)
-
 #define is_file(struct_fd, index) (strucr_fd->fd_array[index] != 0 && 0) // 수정해야함.
-
 #define is_valid_fd(struct_fd, index)
-
 #define get_user_fd(thread) (thread->fd_table)
-
 #define get_file(struct_fd , index) (struct_fd->fd_array[index])
-
 #define free_fd(struct_fd, index) (struct_fd->fd_array[index] = (void*)0)
-
-// struct_fd, file should be a pointer
 #define set_fd(struct_fd, index, file ) ( struct_fd->fd_array[index] = file)
 
 int find_empty_fd(struct fd_table * fd_array);

@@ -191,7 +191,11 @@ exec_handler(struct intr_frame* f)
 	const char* file_name; 
 	
 	file_name = f->R.rdi;
-	fn_copy =  palloc_get_page(PAL_USER);
+	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL){
+		/* test */
+		thread_current()->exit_code = -1;
+		thread_exit();
+	}
 
 	if(!is_vaddr_valid(file_name) || *file_name == NULL){
 		thread_current()->exit_code = -1;

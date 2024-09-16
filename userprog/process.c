@@ -55,7 +55,7 @@ find_process_by_tid(struct list_elem* e_, void* aux);
 static void 
 notice_to_parent(struct process * process, int status);
 
-#define MAX_FORK_CNT 78 //이걸 70으로 하면 통과 어디선가 누수가 있음.
+#define MAX_FORK_CNT 77 //이걸 70으로 하면 통과 어디선가 누수가 있음.
 static int fork_cnt = 0;
 
 #endif
@@ -106,8 +106,7 @@ process_create_initd (const char *file_name) {
 	strlcpy (fn_copy, file_name, PGSIZE);
 
 	/* set wait_info for process process */
-	thread_current()->is_process = true;
-
+	struct thread* t = thread_current();
 	char t_name[16];
 	f_name_to_t_name(file_name, t_name);
 	/* Create a new thread to execute FILE_NAME. */
@@ -157,7 +156,6 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 
 	process = list_entry(elem,struct process, elem);
 	lock_acquire(&process->lock);
-
 	/* 아직 생성중인 경우 */
 	if(process->status == PROCESS_YET_INIT){ 
 		lock_release(&process->lock);
@@ -188,7 +186,9 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	if (is_kern_pte(pte))
 		return true;
 	/* 2. Resolve VA from the parent's page map level 4. */
-	parent_page = pml4_get_page (parent->pml4, va);
+	if ((parent_page = pml4_get_page(parent->pml4, va)) == NULL) { // 할당된 페이지 해제
+    	return false;
+	}
 
 
 	/* 3. TODO: Allocate new PAL_USER page for the process and set result to
@@ -281,7 +281,7 @@ static void notice_to_parent(struct process * process, int status){
 	lock_acquire(&process->lock);
 	process->status = 1;
 	lock_release(&process->lock);
-	if(&process->sema < 0)
+	if(&process->sema == 0)
 		sema_up(&process->sema);
 }
 

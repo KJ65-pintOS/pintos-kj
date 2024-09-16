@@ -283,8 +283,10 @@ thread_create (const char *name, int priority,
 	curr = thread_current();
 	list_init(&t->child_list);
  
-	if((process = malloc(sizeof(struct process))) == NULL)
+	if((process = malloc(sizeof(struct process))) == NULL){
+		palloc_free_page(t);
 		return TID_ERROR;
+	}
 	process->tid = t->tid;
 	process->child = t;
 	process->exit_code = NULL;
@@ -395,7 +397,6 @@ thread_exit (void) {
 		list_remove(elem);
 		free(process);
 	}
-
 	/* notice to parent */
 	if(t != initial_thread){
 		process = t->process;
