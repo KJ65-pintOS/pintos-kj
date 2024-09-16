@@ -55,7 +55,7 @@ find_process_by_tid(struct list_elem* e_, void* aux);
 static void 
 notice_to_parent(struct process * process, int status);
 
-#define MAX_FORK_CNT 77 //이걸 70으로 하면 통과 어디선가 누수가 있음.
+#define MAX_FORK_CNT 80 //이걸 70으로 하면 통과 어디선가 누수가 있음.
 static int fork_cnt = 0;
 
 #endif
@@ -162,8 +162,10 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 		sema_down(&process->sema);
 	}
 	/* 생성이 완료된 경우 */
-	else
+	else{
 		lock_release(&process->lock);
+		sema_try_down(&process->sema);
+	}
 
 	/* 생성이 실패한 경우 */
 	if(process->status == PROCESS_FAILED)
@@ -281,8 +283,7 @@ static void notice_to_parent(struct process * process, int status){
 	lock_acquire(&process->lock);
 	process->status = 1;
 	lock_release(&process->lock);
-	if(&process->sema == 0)
-		sema_up(&process->sema);
+	sema_up(&process->sema);
 }
 
 // TODO: Assignment 1. Setup the argument for user program in process_exec() -> load() 편집해야 함!
@@ -362,13 +363,15 @@ process_wait (tid_t child_tid UNUSED) {
 	process = list_entry(elem, struct process, elem);	
 	lock_acquire(&process->lock);
 	/* 만약 thread가 진행중이라면 */
-	if(process->child != NULL){
+	if(process->child == PROCESS_TERMINATED){
+		lock_release(&process->lock);
+		sema_try_down(&process->sema);
+	}
+	/* Thread가 terminated 된 경우 */
+	else{
 		lock_release(&process->lock);
 		sema_down(&process->sema);
 	}
-	/* Thread가 terminated 된 경우 */
-	else
-		lock_release(&process->lock);
 	exit_code = process->exit_code; 
 	list_remove(&process->elem);
 	free(process);

@@ -403,6 +403,7 @@ thread_exit (void) {
 		lock_acquire(&process->lock);
 		process->exit_code = t->exit_code;
 		process->child = NULL; 
+		process->status = PROCESS_TERMINATED;
 		lock_release(&process->lock);
 		sema_up(&process->sema);
 	}
