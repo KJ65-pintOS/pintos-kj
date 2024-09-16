@@ -261,7 +261,7 @@ __do_fork (void *aux) {
 
 	/* duplicate all opened file */
 	fd_table = get_user_fd(current);
-	memcpy(fd_table, get_user_fd(parent), 4096);
+	memcpy(fd_table, get_user_fd(parent), sizeof(struct fd_table));
 	for(int i = 2; i< FD_MAX_SIZE; i++)
 		if(is_occupied(fd_table,i))
 			get_file(fd_table, i) = file_duplicate(get_file(fd_table,i));
@@ -277,6 +277,7 @@ error:
 
 	/* set error code and terminate */
 	current->exit_code = -1;
+
 	thread_exit ();
 }
 static void notice_to_parent(struct process * process, int status){
@@ -406,7 +407,7 @@ process_exit (void) {
 	if(fd_table != NULL){
 		for(int i = 2; i < FD_MAX_SIZE; i++)
 			if(is_occupied(fd_table,i))
-				file_close(fd_table->fd_array[i]);
+				file_close(get_file(fd_table,i));
 		palloc_free_page(fd_table);
 	}
 	if(t->is_process)
@@ -667,7 +668,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	//file_close (file);
+	
 	return success;
 }
 
