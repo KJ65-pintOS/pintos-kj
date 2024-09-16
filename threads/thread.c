@@ -278,26 +278,26 @@ thread_create (const char *name, int priority,
 	}
 #ifdef USERPROG
 	struct thread *curr;
-	struct family *family;
+	struct process *process;
 	
 	curr = thread_current();
 	list_init(&t->child_list);
  
-	if((family = malloc(sizeof(struct family))) == NULL)
+	if((process = malloc(sizeof(struct process))) == NULL)
 		return TID_ERROR;
-	family->tid = t->tid;
-	family->child = t;
-	family->exit_code = NULL;
-	family->success = false;
-	family->parent = curr;
+	process->tid = t->tid;
+	process->child = t;
+	process->exit_code = NULL;
+	process->status = 0;
+	process->parent = curr;
 
-	lock_init(&family->lock);
-	sema_init(&family->sema,0);
+	lock_init(&process->lock);
+	sema_init(&process->sema,0);
 
 	t->is_process = false;
-	t->family =family;
+	t->process = process;
 
-	list_push_back(&curr->child_list, &family->elem);
+	list_push_back(&curr->child_list, &process->elem);
 	
 #endif
 
@@ -381,29 +381,29 @@ thread_exit (void) {
 #ifdef USERPROG
 	struct thread* t;
 	struct list  *child_list; 
-	struct family *family;
+	struct process *process;
 	struct list_elem *elem;
 
 	t  = thread_current();
 	child_list= &t->child_list;
 
-	/* free all family */
+	/* free all process */
 	while(!list_empty(child_list))
 	{	
 		elem = list_front(child_list);
-		family = list_entry(elem,struct family, elem);
+		process = list_entry(elem,struct process, elem);
 		list_remove(elem);
-		free(family);
+		free(process);
 	}
 
 	/* notice to parent */
 	if(t != initial_thread){
-		family = t->family;
-		lock_acquire(&family->lock);
-		family->exit_code = t->exit_code;
-		family->child = NULL; 
-		lock_release(&family->lock);
-		sema_up(&family->sema);
+		process = t->process;
+		lock_acquire(&process->lock);
+		process->exit_code = t->exit_code;
+		process->child = NULL; 
+		lock_release(&process->lock);
+		sema_up(&process->sema);
 	}
 
 	process_exit ();

@@ -138,7 +138,7 @@ struct thread {
 	/* process include 안했는데 왜 오류 않? */
 	struct fd_table *fd_table;
 	struct list child_list;
-	struct family* family;
+	struct process* process;
 	bool is_process;
 	int exit_code;
 	// 자식 process는 부모 process가 wait할 때까지 자식은 자원을 반환(destroyed)하면 안됨. 이를 위한 sema 중요

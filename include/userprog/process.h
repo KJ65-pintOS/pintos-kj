@@ -49,9 +49,12 @@ struct fd_table{
 
 int find_empty_fd(struct fd_table * fd_array);
 
-struct family {
+#define PROCESS_CREATED 1
+#define PROCESS_FAULED -1
+
+struct process {
     tid_t tid;
-    bool success;
+    int status;
     int exit_code;
     struct thread* child;
     struct thread* parent;

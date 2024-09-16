@@ -50,10 +50,10 @@ setup_argument(struct intr_frame* if_, const char* file_name);
 static char*
 f_name_to_t_name(const char *file_name, char *t_name);
 static bool
-find_family_by_tid(struct list_elem* e_, void* aux);
+find_process_by_tid(struct list_elem* e_, void* aux);
 
 static void 
-notice_to_parent(struct family * family, bool success);
+notice_to_parent(struct process * process, int status);
 
 #define MAX_FORK_CNT 78 //이걸 70으로 하면 통과 어디선가 누수가 있음.
 static int fork_cnt = 0;
@@ -74,9 +74,8 @@ process_init (void) {
 	
 	/* make fd_table */
 	if((fd_table = palloc_get_page(0)) == NULL){
-		/* todo Fork 실패시에 제대로 인자 전달하게 설계 변경 */
-		notice_to_parent(current->family,false);
-
+		/* fd_table 생성 실패시에 부모가 알수있게 값을 변경하고 자신은 종료됨. */
+		notice_to_parent(current->process,PROCESS_FAULED);
 		thread_current()->exit_code = -1;
 		thread_exit();
 	}
@@ -106,7 +105,7 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
-	/* set wait_info for family process */
+	/* set wait_info for process process */
 	thread_current()->is_process = true;
 
 	char t_name[16];
@@ -140,31 +139,36 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	struct thread *parent;
 	struct thread * child;
 	struct list_elem * elem;
-	struct family *family;
+	struct process *process;
 	tid_t pid;
 
+	/* fork 횟수를 제한하는 로직 , 메모리 누수가 존재하여 임시로 작업 */
 	if(fork_cnt >= MAX_FORK_CNT)
 		return -1;
 	fork_cnt++;
 
-	/* Clone current thread to new thread.*/
 	parent = thread_current();
-
+	/* thread create 실패하는 경우 */
 	if((pid = thread_create (name, PRI_DEFAULT, __do_fork, if_)) == -1)
 		return TID_ERROR;
-	if((elem = list_find(&parent->child_list,find_family_by_tid,&pid)) == NULL)
+	/* 생성한 thread를 list로 접근이 불가한 경우 */
+	if((elem = list_find(&parent->child_list,find_process_by_tid,&pid)) == NULL)
 		return TID_ERROR;
-	family = list_entry(elem,struct family, elem);
 
-	lock_acquire(&family->lock);
-	if(!family->success){ /* 아직 생성중인 경우*/
-		lock_release(&family->lock);
-		sema_down(&family->sema);
+	process = list_entry(elem,struct process, elem);
+	lock_acquire(&process->lock);
+
+	/* 아직 생성중인 경우 */
+	if(process->status == 0){ 
+		lock_release(&process->lock);
+		sema_down(&process->sema);
 	}
+	/* 생성이 완료된 경우 */
 	else
-		lock_release(&family->lock);
+		lock_release(&process->lock);
 
-	if(!family->success)
+	/* 생성이 실패한 경우 */
+	if(process->status == -1)
 		pid = TID_ERROR;
 	return pid;
 }
@@ -187,7 +191,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	parent_page = pml4_get_page (parent->pml4, va);
 
 
-	/* 3. TODO: Allocate new PAL_USER page for the family and set result to
+	/* 3. TODO: Allocate new PAL_USER page for the process and set result to
 	 *    TODO: NEWPAGE. */
 	if ((newpage = palloc_get_page(PAL_USER)) == NULL){
 		return false;
@@ -198,7 +202,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	 *    TODO: according to the result). */
 	memcpy(newpage, parent_page, PGSIZE);
 	writable = is_writable(pte);
-	/* 5. Add new page to family's page table at address VA with WRITABLE
+	/* 5. Add new page to process's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
@@ -213,17 +217,21 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  * Hint) parent->tf does not hold the userland context of the process.
  *       That is, you are required to pass second argument of process_fork to
  *       this function. */
-/* TODO: parent and family must start with the same physical memory */
+/* TODO: parent and process must start with the same physical memory */
 static void
 __do_fork (void *aux) {
 	struct intr_frame if_;
 	struct thread *current = thread_current ();
-	struct thread *parent = current->family->parent;
-	struct family* family;
+	struct thread *parent = current->process->parent;
+	struct process* process;
 	bool succ = true;
 
+	/* 	Fork의 인자로 받은 aux를 복사, fork 함수는 실행후 do fork가 완료되기 전까지 잠들기 때문에
+		스택 메모리를 참조해도 값을 잃어버리지 않는다는 보장이 있다. */
 	memcpy (&if_, (struct intr_frame*)aux, sizeof (struct intr_frame));
-	if_.R.rax = 0; // set return value of family to zero
+
+	/* Fork 받은 Child는 그 return value가 0이어야한다. */
+	if_.R.rax = 0; 
 
 	/* 2. Duplicate PT */
 	if ((current->pml4 = pml4_create()) == NULL)
@@ -245,7 +253,7 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
-	// Parent inherits file resources (e.g., opened file descriptor) to family
+	// Parent inherits file resources (e.g., opened file descriptor) to process
 	process_init ();
 	struct fd_table *fd_table;
 
@@ -257,23 +265,24 @@ __do_fork (void *aux) {
 			get_file(fd_table, i) = file_duplicate(get_file(fd_table,i));
 	
 	/* notice success to parent */
-	notice_to_parent(current->family,true);
+	notice_to_parent(current->process,PROCESS_CREATED);
 	/* switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
 error:
 	/* notice failure to parent  */
-	notice_to_parent(current->family,false);
+	notice_to_parent(current->process,PROCESS_FAULED);
+
 	/* set error code and terminate */
 	current->exit_code = -1;
 	thread_exit ();
 }
-static void notice_to_parent(struct family * family, bool success){
-	lock_acquire(&family->lock);
-	family->success = success;
-	lock_release(&family->lock);
-	if(&family->sema < 0)
-		sema_up(&family->sema);
+static void notice_to_parent(struct process * process, int status){
+	lock_acquire(&process->lock);
+	process->status = 1;
+	lock_release(&process->lock);
+	if(&process->sema < 0)
+		sema_up(&process->sema);
 }
 
 // TODO: Assignment 1. Setup the argument for user program in process_exec() -> load() 편집해야 함!
@@ -321,7 +330,7 @@ process_exec (void *f_name) {
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
  * exception), returns -1.  If TID is invalid or if it was not a
- * family of the calling process, or if process_wait() has already
+ * process of the calling process, or if process_wait() has already
  * been successfully called for the given TID, returns -1
  * immediately, without waiting.
  * waiting하지 않고 즉시 -1을 return 해야 하는 경우
@@ -340,36 +349,36 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
 	int exit_code;
-	struct family* family;
+	struct process* process;
 	struct list* child_list;
 	struct list_elem * elem;
 	
 	child_list = &thread_current()->child_list;
 	
 	/* 잘못된 tid 접근 예외 */ 
-	if((elem = list_find(child_list,find_family_by_tid,&child_tid)) == NULL)
+	if((elem = list_find(child_list,find_process_by_tid,&child_tid)) == NULL)
 		return -1;
 		
-	family = list_entry(elem, struct family, elem);	
-	lock_acquire(&family->lock);
+	process = list_entry(elem, struct process, elem);	
+	lock_acquire(&process->lock);
 	/* 만약 thread가 진행중이라면 */
-	if(family->child != NULL){
-		lock_release(&family->lock);
-		sema_down(&family->sema);
+	if(process->child != NULL){
+		lock_release(&process->lock);
+		sema_down(&process->sema);
 	}
 	/* Thread가 terminated 된 경우 */
 	else
-		lock_release(&family->lock);
-	exit_code = family->exit_code; 
-	list_remove(&family->elem);
-	free(family);
+		lock_release(&process->lock);
+	exit_code = process->exit_code; 
+	list_remove(&process->elem);
+	free(process);
 
 	return exit_code;
 }
 static bool
-find_family_by_tid(struct list_elem* e_, void* aux)
+find_process_by_tid(struct list_elem* e_, void* aux)
 {
-	struct family* c = list_entry(e_, struct family, elem);
+	struct process* c = list_entry(e_, struct process, elem);
 	tid_t tid = *(tid_t*)aux;
 	return c->tid == tid;
 }
@@ -389,10 +398,6 @@ process_exit (void) {
 	fork_cnt--;
 
 	t = thread_current();
-	/* exception for a thread that is not process */
-	// if(t->pml4 == NULL)
-	// 	return;
-	
 	/* free fd_table */
 	fd_table = get_user_fd(t);
 	if(fd_table != NULL){
@@ -514,7 +519,7 @@ static bool
 load (const char *file_name, struct intr_frame *if_) {
 	struct thread *t = thread_current ();
 	struct ELF ehdr;
-	struct file *file = NULL;
+	
 	off_t file_ofs;
 	bool success = false;
 	int i;
@@ -554,6 +559,9 @@ load (const char *file_name, struct intr_frame *if_) {
 #endif 
 	/* Argument passing, project 2 */
 	/*****************************************************************/
+	struct file *file = NULL;
+	struct fd_table *table;
+	int fd;
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
@@ -562,8 +570,8 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 	file_deny_write(file);
-	struct fd_table *table = get_user_fd(thread_current());
-	int fd;
+	table = get_user_fd(thread_current());
+	
 	if( ( fd = find_empty_fd(table)) == -1 )
 	{
 		thread_current()->exit_code = -1;
