@@ -49,8 +49,9 @@ struct fd_table{
 
 int find_empty_fd(struct fd_table * fd_array);
 
+#define PROCESS_YET_INIT 0
 #define PROCESS_CREATED 1
-#define PROCESS_FAULED -1
+#define PROCESS_FAILED -1
 
 struct process {
     tid_t tid;

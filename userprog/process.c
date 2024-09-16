@@ -75,7 +75,7 @@ process_init (void) {
 	/* make fd_table */
 	if((fd_table = palloc_get_page(0)) == NULL){
 		/* fd_table 생성 실패시에 부모가 알수있게 값을 변경하고 자신은 종료됨. */
-		notice_to_parent(current->process,PROCESS_FAULED);
+		notice_to_parent(current->process,PROCESS_FAILED);
 		thread_current()->exit_code = -1;
 		thread_exit();
 	}
@@ -159,7 +159,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	lock_acquire(&process->lock);
 
 	/* 아직 생성중인 경우 */
-	if(process->status == 0){ 
+	if(process->status == PROCESS_YET_INIT){ 
 		lock_release(&process->lock);
 		sema_down(&process->sema);
 	}
@@ -168,7 +168,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 		lock_release(&process->lock);
 
 	/* 생성이 실패한 경우 */
-	if(process->status == -1)
+	if(process->status == PROCESS_FAILED)
 		pid = TID_ERROR;
 	return pid;
 }
@@ -271,7 +271,7 @@ __do_fork (void *aux) {
 		do_iret (&if_);
 error:
 	/* notice failure to parent  */
-	notice_to_parent(current->process,PROCESS_FAULED);
+	notice_to_parent(current->process,PROCESS_FAILED);
 
 	/* set error code and terminate */
 	current->exit_code = -1;
