@@ -375,7 +375,7 @@ process_wait (tid_t child_tid UNUSED) {
 	}
 	exit_code = process->exit_code; 
 	list_remove(&process->elem);
-	free(process);
+	free((void*)process);
 
 	return exit_code;
 }
@@ -411,7 +411,7 @@ process_exit (void) {
 		palloc_free_page(fd_table);
 	}
 	if(t->is_process)
-		printf ("%s: exit(%d)\n", t->name, t->exit_code); // process name & exit code
+		printf ("%s: exit(%d, %d)\n", t->name, t->exit_code, t->tid); // process name & exit code
 
 	process_cleanup ();
 }
@@ -573,6 +573,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+	/* fd_table에 추가. */
 	file_deny_write(file);
 	table = get_user_fd(thread_current());
 	
