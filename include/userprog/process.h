@@ -26,58 +26,36 @@ void process_activate (struct thread *next);
 struct fd_table{
    struct file* fd_array[FD_MAX_SIZE];
 };
-/*
-   이거 사용하고 싶으면 가장 먼저 init_fd 해라 ㅇㅋ?
-*/
 
-// struct_fd should be a pointer
-#define init_fd(struct_fd) ( memset(struct_fd, 0 , sizeof(struct fd_table))) // 이거 될지 모르겠음
-#define init_fd2(struct_fd) (memset(struct_fd, 1 , 16 ));
-// struct_fd should be a pointer
+
+#define init_fd(struct_fd) ( {memset(struct_fd, 0 , sizeof(struct fd_table)); memset(struct_fd, 1 , 16 );})
 #define is_occupied(struct_fd, index ) ( struct_fd->fd_array[index] != 0 )
-
-// struct_fd should be a pointer
 #define is_empty(struct_fd, index) ( struct_fd->fd_array[index] == 0)
-
 #define is_file(struct_fd, index) (strucr_fd->fd_array[index] != 0 && 0) // 수정해야함.
-
 #define is_valid_fd(struct_fd, index)
-
-#define get_user_fd(thread) (thread->process->fd)
-
+#define get_user_fd(thread) (thread->fd_table)
 #define get_file(struct_fd , index) (struct_fd->fd_array[index])
-
 #define free_fd(struct_fd, index) (struct_fd->fd_array[index] = (void*)0)
-
-// struct_fd, file should be a pointer
 #define set_fd(struct_fd, index, file ) ( struct_fd->fd_array[index] = file)
 
 int find_empty_fd(struct fd_table * fd_array);
 
+#define PROCESS_YET_INIT 0
+#define PROCESS_CREATED 1
+#define PROCESS_FAILED -1
+#define PROCESS_TERMINATED 2
 
-struct process { // 공유자원 
-    char name[16];
-    struct list threads;
-    struct fd_table *fd;
-    struct lock fd_lock;
+struct process {
+    tid_t tid;
+    int status;
+    int exit_code;
+    struct thread* child;
+    struct thread* parent;
+    struct lock lock;
+    struct semaphore sema;
     struct list_elem elem;
 };
 
-/*
-    fd_lock init 해라.
-    fd_array pml4 만들어라
-    threads list init 해라
-*/
-
-#define process_entry(list_elem) (list_entry( list_elem, struct process, elem))
-
-struct fork_args {
-    struct thread *parent;
-    struct intr_frame *fork_intr_frame;
-    struct semaphore fork_sema;
-    // sema
-    // reason being killed
-};
 
 #endif
 /* file descriptor, project 2 */

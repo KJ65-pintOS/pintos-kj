@@ -11,8 +11,10 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "threads/malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -159,9 +161,12 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
-#ifdef USERPROG
-	list_init(&initial_thread->process_children);
-#endif
+	initial_thread->is_process = false;
+
+	//initial_thread->pml4 = NULL;
+
+	list_init(&initial_thread->child_list);
+
 	if(thread_mlfqs)
 	{
 		// mlfqs
@@ -272,15 +277,30 @@ thread_create (const char *name, int priority,
 		t->recent_cpu = thread_current()->recent_cpu;
 	}
 #ifdef USERPROG
-	list_init(&t->process_children);
-	struct thread *parent = thread_current();
-	if (parent->is_process == true) {
-		t->is_process = true;
-		sema_init(&t->p_wait_sema, 0); // child sema init
-		sema_init(&t->kill_sema, 0);
-		list_push_back(&(parent->process_children), &t->p_child_elem); // put child elem into children list of parent
+	struct thread *curr;
+	struct process *process;
+	
+	curr = thread_current();
+	list_init(&t->child_list);
+ 
+	if((process = malloc(sizeof(struct process))) == NULL){
+		palloc_free_page(t);
+		return TID_ERROR;
 	}
-	t->process = 0x1234;
+	process->tid = t->tid;
+	process->child = t;
+	process->exit_code = NULL;
+	process->status = 0;
+	process->parent = curr;
+
+	lock_init(&process->lock);
+	sema_init(&process->sema,0);
+
+	t->is_process = false;
+	t->process = process;
+
+	list_push_back(&curr->child_list, &process->elem);
+	
 #endif
 
 	/* Add to run queue. */
@@ -360,13 +380,39 @@ thread_tid (void) {
 void
 thread_exit (void) {
 	ASSERT (!intr_context ());
-	struct thread* t = thread_current();
 #ifdef USERPROG
+	struct thread* t;
+	struct list  *child_list; 
+	struct process *process;
+	struct list_elem *elem;
+
+	t  = thread_current();
+	child_list= &t->child_list;
+
+	/* free all process */
+	while(!list_empty(child_list))
+	{	
+		elem = list_front(child_list);
+		process = list_entry(elem,struct process, elem);
+		list_remove(elem);
+		free(process);
+	}
+	/* notice to parent */
+	if(t != initial_thread){
+		process = t->process;
+		lock_acquire(&process->lock);
+		process->exit_code = t->exit_code;
+		process->child = NULL; 
+		process->status = PROCESS_TERMINATED;
+		lock_release(&process->lock);
+		sema_up(&process->sema);
+	}
+
 	process_exit ();
 #endif
 
 	/* Just set our status to dying and schedule another process.
-	   We will be destroyed during the call to schedule_tail(). */
+   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
@@ -409,7 +455,6 @@ void
 thread_set_nice (int nice UNUSED) {
 	/* TODO: Your implementation goes here */
 	thread_current()->nice = nice;
-	// mlfqs_reset_prt();
 }
 
 /* Returns the current thread's nice value. */
@@ -887,27 +932,6 @@ mlfqs_set_priority(struct thread* t)
 /* user program, project 2 */
 #ifdef USERPROG
 
-struct thread *get_child_by_id(tid_t child_tid) {
-	struct thread *parent = thread_current();
-	struct list children_list = parent->process_children;
-	struct list_elem *e;
-	struct thread *child = NULL;
-	if (!list_empty(&parent->process_children)) {
-		for (e = list_begin (&children_list); e != list_end (&children_list); e = list_next (e)) {
-			child = list_entry(e, struct thread, p_child_elem);
-			ASSERT(is_thread(child));
-			if (child->tid == child_tid)
-				break;
-		}
-	}
-	return child;
-}
-
-
-void init_process_wait_info() {
-	struct thread *parent = thread_current();
-	parent->is_process = true;
-}
 
 #endif
 /* user program, project 2 */

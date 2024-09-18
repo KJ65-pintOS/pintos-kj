@@ -487,3 +487,13 @@ list_min (struct list *list, list_less_func *less, void *aux) {
 	}
 	return min;
 }
+
+struct list_elem *
+list_find (struct list *list, list_find_func *find, void *aux) {
+	struct list_elem *e;
+	if(!list_empty(list))
+		for (e = list_begin (list); e != list_end (list); e = list_next (e))
+			if (find (e ,aux))
+				return e;
+	return NULL;
+}

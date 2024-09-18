@@ -106,12 +106,9 @@ struct thread {
 	/* priority scheduling, project 1 */
 
 	int donated_priority;
-	
-
 	uint8_t padding_1;
 	uint8_t cflag;
 	uint8_t padding_2;
-	
 	struct list locks; 
 	struct lock* wanted_lock;
 
@@ -120,10 +117,8 @@ struct thread {
 	/* mlfqs scheduling, project 1*/
 
 	uint8_t padding_3;
-
 	int32_t nice; 
 	int32_t recent_cpu;
-
 	uint8_t padding_4;
 
 	/* mlfqs scheduling, project 1*/
@@ -133,25 +128,20 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
-	
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 
 	uint64_t *pml4;                     /* Page map level 4 */
 
-
-	/* process include 안했는데 왜 됨? */
-	struct process *process;
-	struct list_elem p_elem;
-	
-	struct semaphore p_wait_sema;
-	struct list process_children;
-	struct list_elem p_child_elem;
+	/* process include 안했는데 왜 오류 않? */
+	struct fd_table *fd_table;
+	struct list child_list;
+	struct process* process;
 	bool is_process;
 	int exit_code;
 	// 자식 process는 부모 process가 wait할 때까지 자식은 자원을 반환(destroyed)하면 안됨. 이를 위한 sema 중요
-	struct semaphore kill_sema;
+
 
 #endif
 #ifdef VM
@@ -264,8 +254,7 @@ typedef int ffloat;
 #ifdef USERPROG
 
 #define KILLED 999999
-void init_process_wait_info();
-struct thread *get_child_by_id(tid_t child_tid);
+
 
 
 #endif

@@ -33,7 +33,7 @@ syscall_handler_func(struct intr_frame *);
 static syscall_handler_func 
 *syscall_handlers[25]; // 25는 총 syscall 갯수;
 
-#define get_user_fd(thread) (thread->process->fd)
+#define get_user_fd(thread) (thread->fd_table)
 
 static struct file* 
 get_user_file(int fd);
@@ -175,12 +175,12 @@ exit_handler(struct intr_frame* f){
 
 static void 
 fork_handler(struct intr_frame* f){
- 	char *thread_name = (char *)f->R.rdi;
-	init_process_wait_info();
-	int pid = process_fork(thread_name, f);
+ 	char *thread_name;
+	int pid;
 
-	f->R.rax = pid;  // set fork() syscall return value as pid of child
-	// is_process = false 해주는거 고려
+	thread_name = (char *)f->R.rdi;
+	pid = process_fork(thread_name, f);
+	f->R.rax = pid;
 }
 
 static void
@@ -191,7 +191,11 @@ exec_handler(struct intr_frame* f)
 	const char* file_name; 
 	
 	file_name = f->R.rdi;
-	fn_copy =  palloc_get_page(PAL_USER);
+	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL){
+		/* test */
+		thread_current()->exit_code = -1;
+		thread_exit();
+	}
 
 	if(!is_vaddr_valid(file_name) || *file_name == NULL){
 		thread_current()->exit_code = -1;
@@ -207,7 +211,6 @@ wait_handler(struct intr_frame* f)
 {
  	int pid = (int)f->R.rdi;
 	int exit_code = process_wait(pid);
-
 	f->R.rax = exit_code;
 }
 
