@@ -8,12 +8,14 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "userprog/fd.h"
 #include "userprog/process.h"
 
 
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+void syscall_check_vaddr(uint64_t va, struct thread *curr);
 
 
 /************************************************************************/
@@ -161,7 +163,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 static void
 halt_handler(struct intr_frame *f){
-	//power_off();
+	// power_off();
+	// NOT_REACHED();
 }
 
 static void 
@@ -175,12 +178,9 @@ exit_handler(struct intr_frame* f){
 
 static void 
 fork_handler(struct intr_frame* f){
- 	char *thread_name;
-	int pid;
-
-	thread_name = (char *)f->R.rdi;
-	pid = process_fork(thread_name, f);
-	f->R.rax = pid;
+ 	char *thread_name = (char *)f->R.rdi;
+	syscall_check_vaddr(thread_name, thread_current());
+	f->R.rax = process_fork(thread_name, f);
 }
 
 static void
@@ -188,20 +188,14 @@ exec_handler(struct intr_frame* f)
 { 	
 	int fd;
 	const char *fn_copy;
-	const char* file_name; 
-	
-	file_name = f->R.rdi;
+	const char* file_name = f->R.rdi;
+	syscall_check_vaddr(file_name, thread_current());
 	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL){
 		/* test */
 		thread_current()->exit_code = -1;
 		thread_exit();
 	}
 
-	if(!is_vaddr_valid(file_name) || *file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
-	}
 	strlcpy(fn_copy, file_name, strlen(file_name) + 1);
 	f->R.rax = process_exec(fn_copy);
 }
@@ -245,106 +239,44 @@ static void
 read_handler(struct intr_frame* f)
 {
 	struct file* file;
-	int fd; 
-	void *buffer;
-	unsigned size;
-	
-	fd = f->R.rdi;
-	buffer = f->R.rsi;
-	size = f->R.rdx;
-
-	if(!is_vaddr_valid(buffer) ||  fd == STDOUT_FILENO){
-		thread_current()->exit_code = -1;
-		thread_exit(); 
-		NOT_REACHED();
-	}
+	int fd = f->R.rdi;
+	void *buffer = f->R.rsi;
+	unsigned size = f->R.rdx;
 	struct thread* t = thread_current();
-	if((file = get_user_file(fd))== NULL){
-		f->R.rax = -1;
-		return;
-	}
-	f->R.rax = file_read(file, buffer, size);
+	syscall_check_vaddr(buffer, t);
+	f->R.rax = fd_read(fd ,buffer, size, t->fd_table->fd_array);
 }
 
 static void 
 open_handler(struct intr_frame *f)
 {
 	char* file_name = f->R.rdi;
-	struct fd_table* user_fd;
-	struct file *file = NULL;
-	int empty_num; 
-	/* Open executable file. */
-
-	if(!is_vaddr_valid(file_name) || file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
-	}
 	struct thread* t = thread_current();
+	syscall_check_vaddr(file_name, t);
 
-
-
-	file = filesys_open (file_name);
-	if (file == NULL) {
-		f->R.rax = -1;
-		return;
-	}
-
-	user_fd = get_user_fd(thread_current());
-	if( (empty_num = find_empty_fd(user_fd)) == -1 ){
-		f->R.rax = -1;
-		return;
-	} // 예외처리
-	set_fd(user_fd,empty_num,file);
-
-	f->R.rax = empty_num;
+	f->R.rax = fd_open(file_name, t->fd_table->fd_array);
 }
 
 static void 
 filesize_handler(struct intr_frame* f)
 {	
 	struct file *file;
-	int fd;
+	int fd = f->R.rdi;
 
-	fd = f->R.rdi;
-
-	if((file = get_user_file(fd)) == NULL){
-		f->R.rax = -1;
-		return;
-	}
-	f->R.rax = file_length(file);
+	f->R.rax = fd_filesize(fd, thread_current()->fd_table->fd_array);
 }
 
 static void  
 write_handler(struct intr_frame* f) // 핸들러를 실행하는 주체는 kernel 모드로 전환한 user prog이다.
 {	
 	struct file *file;
-	int fd;
-	void* buffer;
-	unsigned size;
-	
-	fd = f->R.rdi;
-	buffer = f->R.rsi;
-	size = f->R.rdx;
+	int fd = f->R.rdi;
+	void *buffer = f->R.rsi;
+	unsigned size = f->R.rdx;
+	struct thread *t = thread_current();
+	syscall_check_vaddr(buffer, t);
 
-	
-	/* 표준 출력에 작성 */
-	if(fd == STDOUT_FILENO)	{
-		putbuf(buffer,size);
-		return;
-	}
-
-	if( !is_vaddr_valid(buffer) || fd == STDIN_FILENO) {
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
-	}
-
-	if((file = get_user_file(fd)) == NULL){
-		f->R.rax = -1;
-		return;
-	}
-	f->R.rax = file_write(file,buffer,size);
+	f->R.rax = fd_write(fd, buffer, size, t->fd_table->fd_array);
 }
 
 static void
@@ -401,6 +333,7 @@ get_user_file(int fd)
 		return NULL;
 	if(is_empty(user_fd,fd))
 		return NULL;
+		
 	//todo 유효한 파일인지 검사, 이미 닫혔는지 아닌지, 가르키는 주소가 파일이 맞는지.
 	return get_file(user_fd,fd);
 }
@@ -413,35 +346,16 @@ is_vaddr_valid(void* vaddr)
 		|| vaddr == NULL);
 }
 
-
-/* Reads a byte at user virtual address UADDR.
- * UADDR must be below KERN_BASE.
- * Returns the byte value if successful, -1 if a segfault
- * occurred. */
-static int64_t
-get_user (const uint8_t *uaddr) {
-    int64_t result;
-    __asm __volatile (
-    "movabsq $done_get, %0\n"
-    "movzbq %1, %0\n"
-    "done_get:\n"
-    : "=&a" (result) : "m" (*uaddr));
-    return result;
-}
-
-/* Writes BYTE to user address UDST.
- * UDST must be below KERN_BASE.
- * Returns true if successful, false if a segfault occurred. */
-static bool
-put_user (uint8_t *udst, uint8_t byte) {
-    int64_t error_code;
-    __asm __volatile (
-    "movabsq $done_put, %0\n"
-    "movb %b2, %1\n"
-    "done_put:\n"
-    : "=&a" (error_code), "=m" (*udst) : "q" (byte));
-    return error_code != -1;
-}
 #endif
+
+void syscall_check_vaddr(uint64_t va, struct thread *curr) {
+	int temp;
+	if (!is_user_vaddr(va)) {
+		curr->exit_code = -1;
+		thread_exit();
+	}
+	temp = *(int *)va;
+	return;
+}
 /* userprogram, project 2 */
 /******************************************************/
