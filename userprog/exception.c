@@ -150,18 +150,17 @@ page_fault (struct intr_frame *f) {
 
 	/* Count page faults. */
 	page_fault_cnt++;
-	if(user){
-		thread_current()->exit_code = -1;
-		thread_exit();
-	}
-	struct thread* t = thread_current();
+#ifdef USERPROG
+	thread_current()->exit_code = -1;
+	thread_exit();
+#else
 	/* If the fault is true fault, show info and exit. */
-	// 망할 643 번째 child가 Process 가 NULL 임.
 	printf ("Page fault at %p: %s error %s page in %s context.\n",
 			fault_addr,
 			not_present ? "not present" : "rights violation",
 			write ? "writing" : "reading",
 			user ? "user" : "kernel");
 	kill (f);
+#endif
 }
 
