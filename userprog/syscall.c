@@ -33,53 +33,40 @@ syscall_handler_func(struct intr_frame *);
 static syscall_handler_func 
 *syscall_handlers[25]; // 25는 총 syscall 갯수;
 
-#define get_user_fd(thread) (thread->fd_table)
+#define get_fd_table(thread) (thread->fd_table)
 
 static struct file* 
-get_user_file(int fd);
+get_file_by_fd(int fd);
 
 static bool
 is_vaddr_valid(void* vaddr);
 
 static void
 halt_handler(struct intr_frame *f);
-
 static void
 exit_handler(struct intr_frame* f);
-
 static void 
 fork_handler(struct intr_frame* f);
-
 static void
 exec_handler(struct intr_frame* f);
-
 static void 
 wait_handler(struct intr_frame* f);
-
 static void
 create_handler(struct intr_frame* f);
-
 static void
 remove_hander(struct intr_frame* f);
-
 static void
 read_handler(struct intr_frame* f);
-
 static void 
 open_handler(struct intr_frame *f);
-
 static void 
 filesize_handler(struct intr_frame* f);
-
 static void  
 write_handler(struct intr_frame* f);
-
 static void
 seek_handler(struct intr_frame* f);
-
 static void
 tell_handler(struct intr_frame* f);
-
 static void
 close_handler(struct intr_frame* f);
 
@@ -140,7 +127,6 @@ syscall_init (void) {
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
-	// TODO: Your implementation goes here.
 
 #ifdef USERPROG /* syscall, project 2 */
 
@@ -161,13 +147,16 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 static void
 halt_handler(struct intr_frame *f){
-	//power_off();
+	// power_off();
 }
 
 static void 
 exit_handler(struct intr_frame* f){
-	struct thread *current = thread_current();
-	int exit_code = f->R.rdi;
+	struct thread *current;
+	int exit_code;
+
+	current = thread_current();
+	exit_code = f->R.rdi;
 	current->exit_code = exit_code;
 	current->tf.R.rax = exit_code;
 	thread_exit();
@@ -190,9 +179,8 @@ exec_handler(struct intr_frame* f)
 	const char *fn_copy;
 	const char* file_name; 
 	
-	file_name = f->R.rdi;
+	file_name = (char*)f->R.rdi;
 	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL){
-		/* test */
 		thread_current()->exit_code = -1;
 		thread_exit();
 	}
@@ -203,14 +191,19 @@ exec_handler(struct intr_frame* f)
 		NOT_REACHED();
 	}
 	strlcpy(fn_copy, file_name, strlen(file_name) + 1);
+
+	/* exec에 실패할 경우에만 return value가 존재함. */
 	f->R.rax = process_exec(fn_copy);
 }
 
 static void 
 wait_handler(struct intr_frame* f)
-{
- 	int pid = (int)f->R.rdi;
-	int exit_code = process_wait(pid);
+{	
+	int pid;
+	int exit_code;
+
+ 	pid = (int)f->R.rdi;
+	exit_code = process_wait(pid);
 	f->R.rax = exit_code;
 }
 
@@ -220,8 +213,9 @@ create_handler(struct intr_frame* f)
 	char* file_name;
 	unsigned initial_size;
 	
-	file_name = f->R.rdi;
-	initial_size = f->R.rsi;
+	file_name = (char*)f->R.rdi;
+	initial_size = (unsigned)f->R.rsi;
+
 	if(!is_vaddr_valid(file_name) || *file_name == NULL){
 		thread_current()->exit_code = -1;
 		thread_exit();
@@ -237,7 +231,6 @@ remove_hander(struct intr_frame* f)
 	char *file_name;
 
 	file_name = f->R.rdi;
-
 	f->R.rax = filesys_remove(file_name);
 }
 
@@ -259,7 +252,7 @@ read_handler(struct intr_frame* f)
 		NOT_REACHED();
 	}
 	struct thread* t = thread_current();
-	if((file = get_user_file(fd))== NULL){
+	if((file = get_file_by_fd(fd))== NULL){
 		f->R.rax = -1;
 		return;
 	}
@@ -269,20 +262,18 @@ read_handler(struct intr_frame* f)
 static void 
 open_handler(struct intr_frame *f)
 {
-	char* file_name = f->R.rdi;
-	struct fd_table* user_fd;
-	struct file *file = NULL;
-	int empty_num; 
-	/* Open executable file. */
+	struct fd_table* fd_table;
+	struct file *file;
+	char* file_name;
+	int fd; 
 
+	/* Open executable file. */
+	file_name = f->R.rdi;
 	if(!is_vaddr_valid(file_name) || file_name == NULL){
 		thread_current()->exit_code = -1;
 		thread_exit();
 		NOT_REACHED();
 	}
-	struct thread* t = thread_current();
-
-
 
 	file = filesys_open (file_name);
 	if (file == NULL) {
@@ -290,15 +281,14 @@ open_handler(struct intr_frame *f)
 		return;
 	}
 
-	user_fd = get_user_fd(thread_current());
-	if( (empty_num = find_empty_fd(user_fd)) == -1 ){
+	fd_table = get_fd_table(thread_current());
+	if( (fd = find_empty_fd(fd_table)) == -1 ){
 		file_close(file);
 		f->R.rax = -1;
 		return;
-	} // 예외처리
-	set_fd(user_fd,empty_num,file);
-
-	f->R.rax = empty_num;
+	}
+	set_fd(fd_table,fd,file);
+	f->R.rax = fd;
 }
 
 static void 
@@ -309,7 +299,7 @@ filesize_handler(struct intr_frame* f)
 
 	fd = f->R.rdi;
 
-	if((file = get_user_file(fd)) == NULL){
+	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
 		return;
 	}
@@ -317,7 +307,7 @@ filesize_handler(struct intr_frame* f)
 }
 
 static void  
-write_handler(struct intr_frame* f) // 핸들러를 실행하는 주체는 kernel 모드로 전환한 user prog이다.
+write_handler(struct intr_frame* f)
 {	
 	struct file *file;
 	int fd;
@@ -327,7 +317,6 @@ write_handler(struct intr_frame* f) // 핸들러를 실행하는 주체는 kerne
 	fd = f->R.rdi;
 	buffer = f->R.rsi;
 	size = f->R.rdx;
-
 	
 	/* 표준 출력에 작성 */
 	if(fd == STDOUT_FILENO)	{
@@ -341,7 +330,7 @@ write_handler(struct intr_frame* f) // 핸들러를 실행하는 주체는 kerne
 		NOT_REACHED();
 	}
 
-	if((file = get_user_file(fd)) == NULL){
+	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
 		return;
 	}
@@ -358,7 +347,7 @@ seek_handler(struct intr_frame* f)
 	fd = f->R.rdi;
 	position = f->R.rsi;
 
-	if((file = get_user_file(fd)) == NULL){
+	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
 		return;
 	}
@@ -372,7 +361,7 @@ tell_handler(struct intr_frame* f)
 	int fd;
 
 	fd = f->R.rdi;
-	if((file = get_user_file(fd)) == NULL){
+	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
 		return;
 	}
@@ -382,28 +371,34 @@ tell_handler(struct intr_frame* f)
 static void
 close_handler(struct intr_frame* f)
 {
+	struct thread* current;
 	struct file *file;
 	int fd;
 
-	fd = f->R.rdi;
-	if((file = get_user_file(fd)) == NULL){
-		thread_current()->exit_code = -1;
+	current = thread_current();
+	fd = (int)f->R.rdi;
+
+	if((file = get_file_by_fd(fd)) == NULL){
+		current->exit_code = -1;
 		thread_exit();
 	}
-	free_fd(get_user_fd(thread_current()),fd);
+	free_fd(get_fd_table(current),fd);
 	file_close(file);
 }
 
+/***********************************************************/
+/* static functions */
+
 static struct file* 
-get_user_file(int fd)
+get_file_by_fd(int fd)
 {
-	struct fd_table *user_fd = get_user_fd(thread_current());
+	struct fd_table *fd_table = get_fd_table(thread_current());
 	if(fd < FD_MIN_SIZE || fd > FD_MAX_SIZE)
 		return NULL;
-	if(is_empty(user_fd,fd))
+	if(is_empty(fd_table,fd))
 		return NULL;
 	//todo 유효한 파일인지 검사, 이미 닫혔는지 아닌지, 가르키는 주소가 파일이 맞는지.
-	return get_file(user_fd,fd);
+	return get_file(fd_table,fd);
 }
 
 static bool
@@ -414,6 +409,7 @@ is_vaddr_valid(void* vaddr)
 		|| vaddr == NULL);
 }
 
+/***********************************************************/
 
 /* Reads a byte at user virtual address UADDR.
  * UADDR must be below KERN_BASE.

@@ -55,8 +55,6 @@ find_process_by_tid(struct list_elem* e_, void* aux);
 static void 
 notice_to_parent(struct process * process, int status);
 
-#define MAX_FORK_CNT 80 //이걸 70으로 하면 통과 어디선가 누수가 있음.
-static int fork_cnt = 0;
 
 #endif
 /* userprogram, project 2 */
@@ -142,13 +140,10 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	tid_t pid;
 
 	/* fork 횟수를 제한하는 로직 , 메모리 누수가 존재하여 임시로 작업 */
-	if(fork_cnt >= MAX_FORK_CNT)
-		return -1;
-	fork_cnt++;
 
 	parent = thread_current();
 	/* thread create 실패하는 경우 */
-	if((pid = thread_create (name, PRI_DEFAULT, __do_fork, if_)) == -1)
+	if((pid = thread_create (name, PRI_DEFAULT, __do_fork, if_)) == TID_ERROR)
 		return TID_ERROR;
 	/* 생성한 thread를 list로 접근이 불가한 경우 */
 	if((elem = list_find(&parent->child_list,find_process_by_tid,&pid)) == NULL)
@@ -398,8 +393,6 @@ process_exit (void) {
 	 * TODO: We recommend you to implement process resource cleanup here. */
 	struct fd_table *fd_table;
 	struct thread* t;
-	/* test */
-	fork_cnt--;
 
 	t = thread_current();
 	/* free fd_table */
