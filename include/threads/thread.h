@@ -140,6 +140,7 @@ struct thread {
 	struct process* process;
 	bool is_process;
 	int exit_code;
+	struct file *loaded_file;
 	// 자식 process는 부모 process가 wait할 때까지 자식은 자원을 반환(destroyed)하면 안됨. 이를 위한 sema 중요
 
 

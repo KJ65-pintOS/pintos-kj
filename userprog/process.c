@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "intrinsic.h"
 #include "threads/synch.h"
+#include "userprog/fd.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -73,13 +74,16 @@ process_init (void) {
 	current = thread_current ();
 	
 	/* make fd_table */
-	if((fd_table = palloc_get_page(0)) == NULL){
+	if (current->fd_table->fd_array)
+		fd_close_all(current->fd_table->fd_array);
+	else
+		fd_table = palloc_get_page(PAL_ZERO);
+	if(fd_table == NULL) {
 		/* fd_table 생성 실패시에 부모가 알수있게 값을 변경하고 자신은 종료됨. */
 		notice_to_parent(current->process,PROCESS_FAILED);
 		thread_current()->exit_code = -1;
 		thread_exit();
 	}
-	init_fd(fd_table);
 	current->fd_table = fd_table;
 	current->is_process = true;
 	
@@ -119,11 +123,14 @@ process_create_initd (const char *file_name) {
 /* A thread function that launches first user process. */
 static void
 initd (void *f_name) {
+	struct thread *current = thread_current();
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
 #endif
 	
 	process_init ();
+	current->fd_table->fd_array[STDIN_FILENO] = stdin;
+	current->fd_table->fd_array[STDOUT_FILENO] = stdout;
 
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
@@ -148,7 +155,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 
 	parent = thread_current();
 	/* thread create 실패하는 경우 */
-	if((pid = thread_create (name, PRI_DEFAULT, __do_fork, if_)) == -1)
+	if((pid = thread_create (name, PRI_DEFAULT, __do_fork, if_)) == TID_ERROR)
 		return TID_ERROR;
 	/* 생성한 thread를 list로 접근이 불가한 경우 */
 	if((elem = list_find(&parent->child_list,find_process_by_tid,&pid)) == NULL)
@@ -287,7 +294,7 @@ static void notice_to_parent(struct process * process, int status){
 	sema_up(&process->sema);
 }
 
-// TODO: Assignment 1. Setup the argument for user program in process_exec() -> load() 편집해야 함!
+// TODO: Assignment 1. Setup the argument for user program in process_exec()
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
@@ -531,12 +538,10 @@ load (const char *file_name, struct intr_frame *if_) {
 	/*****************************************************************/
 	/* Argument passing, project 2 */
 	//todo filename 의 값이 제대로 복사되지 않고 있음. strcpy등으로 복사해서 저장하자.
-#ifdef USERPROG 
 	char* argv;
 	argv = strchr(file_name,' '); //file name 뒤를 짜름.
 	if(argv != NULL)
 		*argv = '\0';
-#endif
 	/* Argument passing, project 2 */
 	/*****************************************************************/
 
@@ -544,28 +549,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
 		goto done;
-	process_activate (thread_current ());
-	/* TODO 1: file_name을 쪼개줘야 함 
-		- string.c의 strtok_r()함수 사용
-		- 반드시 Calling convention(ABI)를 지켜야 한다
-			- rsi -> addr of argv[0] 
-			- rdi -> argc
-		- rip -> user process entry point addr
-	*/
-	// travers string and set argc
-
+	process_activate (t);
 	/*****************************************************************/
 	/* Argument passing, project 2 */
-#ifdef USERPROG 
 	char *space_ptr = strchr(file_name, ' ');
 	if (space_ptr != NULL)
 		*space_ptr = '\0';
-#endif 
 	/* Argument passing, project 2 */
 	/*****************************************************************/
 	struct file *file = NULL;
-	struct fd_table *table;
-	int fd;
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
@@ -573,15 +565,8 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+	t->loaded_file = file;
 	file_deny_write(file);
-	table = get_user_fd(thread_current());
-	
-	if( ( fd = find_empty_fd(table)) == -1 )
-	{
-		thread_current()->exit_code = -1;
-		thread_exit();
-	}
-	set_fd( table ,fd , file);
 
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -668,7 +653,10 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	
+	if (!success && t->loaded_file) {
+		file_allow_write(t->loaded_file);
+		file_close(t->loaded_file);
+	}
 	return success;
 }
 

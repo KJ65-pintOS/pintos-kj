@@ -11,7 +11,6 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
-
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "threads/malloc.h"
@@ -380,13 +379,12 @@ thread_tid (void) {
 void
 thread_exit (void) {
 	ASSERT (!intr_context ());
+	struct thread* t = thread_current();
 #ifdef USERPROG
-	struct thread* t;
 	struct list  *child_list; 
 	struct process *process;
 	struct list_elem *elem;
 
-	t  = thread_current();
 	child_list= &t->child_list;
 
 	/* free all process */
@@ -412,7 +410,7 @@ thread_exit (void) {
 #endif
 
 	/* Just set our status to dying and schedule another process.
-   We will be destroyed during the call to schedule_tail(). */
+	   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
@@ -455,6 +453,7 @@ void
 thread_set_nice (int nice UNUSED) {
 	/* TODO: Your implementation goes here */
 	thread_current()->nice = nice;
+	// mlfqs_reset_prt();
 }
 
 /* Returns the current thread's nice value. */
@@ -931,7 +930,10 @@ mlfqs_set_priority(struct thread* t)
 /*****************************************************************/
 /* user program, project 2 */
 #ifdef USERPROG
-
+void init_process_wait_info() {
+	struct thread *parent = thread_current();
+	parent->is_process = true;
+}
 
 #endif
 /* user program, project 2 */
