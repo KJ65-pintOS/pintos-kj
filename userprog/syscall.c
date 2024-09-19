@@ -292,6 +292,7 @@ open_handler(struct intr_frame *f)
 
 	user_fd = get_user_fd(thread_current());
 	if( (empty_num = find_empty_fd(user_fd)) == -1 ){
+		file_close(file);
 		f->R.rax = -1;
 		return;
 	} // 예외처리
