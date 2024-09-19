@@ -411,7 +411,7 @@ process_exit (void) {
 		palloc_free_page(fd_table);
 	}
 	if(t->is_process)
-		printf ("%s: exit(%d, %d)\n", t->name, t->exit_code, t->tid); // process name & exit code
+		printf ("%s: exit(%d)\n", t->name, t->exit_code); // process name & exit code
 
 	process_cleanup ();
 }
@@ -669,7 +669,10 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	
+	if (!success && file) {
+		file_allow_write(file);
+		file_close(file);
+	}
 	return success;
 }
 

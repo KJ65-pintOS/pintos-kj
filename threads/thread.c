@@ -298,7 +298,7 @@ thread_create (const char *name, int priority,
 
 	t->is_process = false;
 	t->process = process;
-
+	t->fd_table = NULL;
 	list_push_back(&curr->child_list, &process->elem);
 	
 #endif
