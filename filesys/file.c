@@ -12,6 +12,7 @@ struct file {
 	off_t pos;                  /* Current position. */
 	bool deny_write;            /* Has file_deny_write() been called? */
 
+	int open_cnt;				/* Number of openers */
 	/****************************/
 	/* user program, project 2 */
 #ifdef USERPROG
@@ -21,6 +22,9 @@ struct file {
 
 #endif
 };
+
+struct file _stdin;
+struct file _stdout;
 /* Opens a file for the given INODE, of which it takes ownership,
  * and returns the new file.  Returns a null pointer if an
  * allocation fails or if INODE is null. */
@@ -170,4 +174,17 @@ off_t
 file_tell (struct file *file) {
 	ASSERT (file != NULL);
 	return file->pos;
+}
+
+struct file *file_plus_open_cnt(struct file *file) {
+	if (!file) {
+		return NULL;
+	}
+	if (file == stdin || file == stdout) {
+		return file;
+	}
+	if (!inode_reopen(file->inode))
+		return NULL;
+	file->open_cnt++;
+	return file;
 }

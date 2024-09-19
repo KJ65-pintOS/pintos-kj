@@ -27,4 +27,10 @@ void file_seek (struct file *, off_t);
 off_t file_tell (struct file *);
 off_t file_length (struct file *);
 
+extern struct file _stdin;
+extern struct file _stdout;
+
+#define stdin (&_stdin)
+#define stdout (&_stdout)
+
 #endif /* filesys/file.h */
