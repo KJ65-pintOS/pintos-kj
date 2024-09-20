@@ -135,6 +135,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	
 	sys_num = f->R.rax;
 	handler = syscall_handlers[sys_num];
+	if(handler == NULL)
+		return;
 	handler(f);
 
 #endif /* syscall, project 2 */
