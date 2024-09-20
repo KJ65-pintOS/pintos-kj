@@ -11,8 +11,10 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "threads/malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -159,6 +161,11 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
+	initial_thread->is_process = false;
+
+	//initial_thread->pml4 = NULL;
+
+	list_init(&initial_thread->child_list);
 
 	if(thread_mlfqs)
 	{
@@ -269,6 +276,32 @@ thread_create (const char *name, int priority,
 		t->nice = thread_get_nice(); // 상속
 		t->recent_cpu = thread_current()->recent_cpu;
 	}
+#ifdef USERPROG
+	struct thread *curr;
+	struct process *process;
+	
+	curr = thread_current();
+	list_init(&t->child_list);
+ 
+	if((process = malloc(sizeof(struct process))) == NULL){
+		palloc_free_page(t);
+		return TID_ERROR;
+	}
+	process->tid = t->tid;
+	process->child = t;
+	process->exit_code = NULL;
+	process->status = 0;
+	process->parent = curr;
+
+	lock_init(&process->lock);
+	sema_init(&process->sema,0);
+
+	t->is_process = false;
+	t->process = process;
+	t->fd_table = NULL;
+	list_push_back(&curr->child_list, &process->elem);
+	
+#endif
 
 	/* Add to run queue. */
 	thread_unblock (t);
@@ -347,13 +380,39 @@ thread_tid (void) {
 void
 thread_exit (void) {
 	ASSERT (!intr_context ());
-
 #ifdef USERPROG
+	struct thread* t;
+	struct list  *child_list; 
+	struct process *process;
+	struct list_elem *elem;
+
+	t  = thread_current();
+	child_list= &t->child_list;
+
+	/* free all process */
+	while(!list_empty(child_list))
+	{	
+		elem = list_front(child_list);
+		process = list_entry(elem,struct process, elem);
+		list_remove(elem);
+		free(process);
+	}
+	/* notice to parent */
+	if(t != initial_thread){
+		process = t->process;
+		lock_acquire(&process->lock);
+		process->exit_code = t->exit_code;
+		process->child = NULL; 
+		process->status = PROCESS_TERMINATED;
+		lock_release(&process->lock);
+		sema_up(&process->sema);
+	}
+
 	process_exit ();
 #endif
 
 	/* Just set our status to dying and schedule another process.
-	   We will be destroyed during the call to schedule_tail(). */
+   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
@@ -396,7 +455,6 @@ void
 thread_set_nice (int nice UNUSED) {
 	/* TODO: Your implementation goes here */
 	thread_current()->nice = nice;
-	// mlfqs_reset_prt();
 }
 
 /* Returns the current thread's nice value. */
@@ -479,6 +537,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	memset (t, 0, sizeof *t);
 	t->status = THREAD_BLOCKED;
 	strlcpy (t->name, name, sizeof t->name);
+	
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
@@ -741,9 +800,15 @@ thread_try_donate_prt(int given_prt, struct thread* to)
 
 void 
 thread_event(void)
-{
+{	
+
 	if(is_priority_less_than_next(thread_get_priority()))
-		thread_yield();
+		/* 외부 인터럽트 단계에서 실행시 yield on return 만 켜기. */
+		if(intr_context()) 
+			intr_yield_on_return();
+		else
+			thread_yield();
+
 }
 
 
@@ -763,7 +828,7 @@ is_priority_less_than_next(int64_t p)
 	if(list_empty(&ready_list))
 		return false;
 	struct thread *front = thread_entry(list_front(&ready_list));
-	return (p <= thread_get_priority_any(front));
+	return (p < thread_get_priority_any(front));
 }
 
 
@@ -863,4 +928,11 @@ mlfqs_set_priority(struct thread* t)
 
 
 /* advanced scheduling, project 1 */
+/*****************************************************************/
+/* user program, project 2 */
+#ifdef USERPROG
+
+
+#endif
+/* user program, project 2 */
 /*****************************************************************/

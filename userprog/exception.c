@@ -79,6 +79,8 @@ kill (struct intr_frame *f) {
 
 	/* The interrupt frame's code segment value tells us where the
 	   exception originated. */
+	struct thread *child = thread_current();
+	child->exit_code = KILLED;
 	switch (f->cs) {
 		case SEL_UCSEG:
 			/* User's code segment, so it's a user exception, as we
@@ -148,7 +150,11 @@ page_fault (struct intr_frame *f) {
 
 	/* Count page faults. */
 	page_fault_cnt++;
-
+	if(user){
+		thread_current()->exit_code = -1;
+		thread_exit();
+	}
+	struct thread* t = thread_current();
 	/* If the fault is true fault, show info and exit. */
 	printf ("Page fault at %p: %s error %s page in %s context.\n",
 			fault_addr,
