@@ -397,6 +397,9 @@ thread_exit (void) {
 		list_remove(elem);
 		free(process);
 	}
+
+
+	process_exit ();
 	/* notice to parent */
 	if(t != initial_thread){
 		process = t->process;
@@ -407,8 +410,6 @@ thread_exit (void) {
 		lock_release(&process->lock);
 		sema_up(&process->sema);
 	}
-
-	process_exit ();
 #endif
 
 	/* Just set our status to dying and schedule another process.

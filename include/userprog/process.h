@@ -38,6 +38,7 @@ struct fd_table{
 #define free_fd(struct_fd, index) (struct_fd->fd_array[index] = (void*)0)
 #define set_fd(struct_fd, index, file ) ( struct_fd->fd_array[index] = file)
 
+#define FD_ERROR -1
 int find_empty_fd(struct fd_table * fd_array);
 
 #define PROCESS_YET_INIT 0
