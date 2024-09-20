@@ -521,17 +521,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;
 	int i;
 
-	/*****************************************************************/
-	/* Argument passing, project 2 */
-	//todo filename 의 값이 제대로 복사되지 않고 있음. strcpy등으로 복사해서 저장하자.
-#ifdef USERPROG 
+	
+#ifdef USERPROG /* Argument passing, project 2 */
 	char* argv;
-	argv = strchr(file_name,' '); //file name 뒤를 짜름.
+	argv = strchr(file_name,' '); 
 	if(argv != NULL)
 		*argv = '\0';
-#endif
-	/* Argument passing, project 2 */
-	/*****************************************************************/
+#endif/* Argument passing, project 2 */
+	
+
 
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
@@ -547,15 +545,12 @@ load (const char *file_name, struct intr_frame *if_) {
 	*/
 	// travers string and set argc
 
-	/*****************************************************************/
-	/* Argument passing, project 2 */
-#ifdef USERPROG 
+#ifdef USERPROG /* Argument passing, project 2 */
 	char *space_ptr = strchr(file_name, ' ');
 	if (space_ptr != NULL)
 		*space_ptr = '\0';
-#endif 
-	/* Argument passing, project 2 */
-	/*****************************************************************/
+#endif /* Argument passing, project 2 */
+
 	struct file *file = NULL;
 	struct fd_table *table;
 	int fd;
@@ -570,7 +565,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	file_deny_write(file);
 	table = get_user_fd(thread_current());
 	
-	if( ( fd = find_empty_fd(table)) == -1 )
+	if( ( fd = find_empty_fd(table)) == FD_ERROR )
 	{
 		thread_current()->exit_code = -1;
 		thread_exit();
@@ -723,7 +718,7 @@ int find_empty_fd(struct fd_table * fd)
     ASSERT(fd != NULL)
     if(fd == NULL)
         return -1;
-    for(int i = 0; i < 512; i++ )
+    for(int i = 2; i < FD_MAX_SIZE; i++ )
     {
         if( fd->fd_array[i] == 0)
             return i;
