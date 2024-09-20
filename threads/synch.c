@@ -135,9 +135,9 @@ sema_up (struct semaphore *sema) {
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-   sema->value++;
+    sema->value++;
 	if (!list_empty (&sema->waiters)){
-      
+     
       struct thread* next_t = thread_peeker(&sema->waiters);
       list_remove(&next_t->elem);
 		thread_unblock (next_t);
