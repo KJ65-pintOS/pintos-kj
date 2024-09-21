@@ -277,7 +277,7 @@ error:
 }
 static void notice_to_parent(struct process * process, int status){
 	lock_acquire(&process->lock);
-	process->status = 1;
+	process->status = status;
 	lock_release(&process->lock);
 	sema_up(&process->sema);
 }
