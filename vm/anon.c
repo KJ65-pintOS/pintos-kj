@@ -1,4 +1,5 @@
 /* anon.c: Implementation of page for non-disk image (a.k.a. anonymous page). */
+// anonymous page를 위한 기능을 제공합니다 (vm_type = VM_ANON).
 
 #include "vm/vm.h"
 #include "devices/disk.h"

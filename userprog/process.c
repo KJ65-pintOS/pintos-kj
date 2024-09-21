@@ -889,7 +889,10 @@ install_page (void *upage, void *kpage, bool writable) {
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
-
+/* 당신은 load_segment 함수 내부의 vm_alloc_page_with_initialize의 네 번째 인자가 lazy_load_segment 라는 것을 알아차렸을 것입니다. 
+   이 함수는 실행 가능한 파일의 페이지들을 초기화하는 함수이고 page fault가 발생할 때 호출됩니다. 
+   이 함수는 페이지 구조체와 aux를 인자로 받습니다. aux는 load_segment에서 당신이 설정하는 정보입니다. 
+   이 정보를 사용하여 당신은 세그먼트를 읽을 파일을 찾고 최종적으로는 세그먼트를 메모리에서 읽어야 합니다.*/
 static bool
 lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
@@ -911,6 +914,10 @@ lazy_load_segment (struct page *page, void *aux) {
  *
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
+/* 현재 코드는 메인 루프 안에서 파일로부터 읽을 바이트의 수와 0으로 채워야 할 바이트의 수를 측정합니다. 
+   그리고 그것은 대기 중인 오브젝트를 생성하는 vm_alloc_page_with_initializer함수를 호출합니다. 
+   당신은 vm_alloc_page_with_initializer에 제공할 aux 인자로써 보조 값들을 설정할 필요가 있습니다. 
+   당신은 바이너리 파일을 로드할 때 필수적인 정보를 포함하는 구조체를 생성하는 것이 좋습니다. */
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
@@ -940,6 +947,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 }
 
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
+/* 첫 스택 페이지는 지연적으로 할당될 필요가 없습니다. 
+   당신은 페이지 폴트가 발생하는 것을 기다릴 필요 없이 그것(스택 페이지)을 load time 때 커맨드 라인의 인자들과 함께 할당하고 초기화 할 수 있습니다. 
+   당신은 스택을 확인하는 방법을 제공해야 합니다. 
+   당신은 vm/vm.h의 vm_type에 있는 보조 marker(예 - VM_MARKER_0)들을 페이지를 마킹하는데 사용할 수 있습니다.*/
 static bool
 setup_stack (struct intr_frame *if_) {
 	bool success = false;

@@ -6,6 +6,7 @@
  * object (anon, file, page_cache), by initializing the page object,and calls
  * initialization callback that passed from vm_alloc_page_with_initializer
  * function.
+ * 초기화되지 않은 페이지들을 위한 기능을 제공합니다 (vm_type = VM_UNINIT). 현재 설계에서는, 모든 페이지가 초기화되지 않은 페이지로 설정되고, 이후 anonymous page나 file-backed page로 변환됩니다.
  * */
 
 #include "vm/vm.h"
@@ -43,6 +44,7 @@ uninit_new (struct page *page, void *va, vm_initializer *init,
 }
 
 /* Initalize the page on first fault */
+// 이 페이지 폴트를 처리하는 과정에서 uninit_initialize 을 호출하고 이전에 당신이 세팅해 놓은 초기화 함수를 호출
 static bool
 uninit_initialize (struct page *page, void *kva) {
 	struct uninit_page *uninit = &page->uninit;
