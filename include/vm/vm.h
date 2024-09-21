@@ -2,6 +2,7 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include <hash.h>
 
 enum vm_type {
 	/* page not initialized */
@@ -40,15 +41,20 @@ struct thread;
  * This is kind of "parent class", which has four "child class"es, which are
  * uninit_page, file_page, anon_page, and page cache (project4).
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
-struct page {
+struct page { // vm_entry의 역할
 	const struct page_operations *operations;
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	struct hash_elem hash_elem;
+	int fault_cnt;
+	// location in swqp area
+	// reference to the file object and offset(memory mapped file)
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
+	// page마다 아래 중 하나의 page 종류만 사용 가능함
 	union {
 		struct uninit_page uninit;
 		struct anon_page anon;
@@ -60,6 +66,11 @@ struct page {
 };
 
 /* The representation of "frame" */
+/* - 물리 메모리 상의 연속적인 영역입니다. 페이지와 동일하게, 프레임은 PAGE_SIZE여야 하고 페이지 크기에 정렬되어 있어야 합니다 
+   - 프레임 테이블에는 각 프레임의 엔트리 정보가 담겨 있습니다. 
+   - 프레임 테이블의 각 엔트리에는 현재 해당 엔트리를 차지하고 있는 페이지에 대한 포인터(있는 경우라면), 그리고 당신의 선택에 따라 넣을 수 있는 기타 데이터들이 담겨 있습니다. 
+   - 프레임 테이블은 비어있는 프레임이 없을 때 쫓아낼 페이지를 골라줌으로써, Pintos가 효율적으로 eviction policy를 구현할 수 있도록 해줍니다.
+*/
 struct frame {
 	void *kva;
 	struct page *page;
@@ -85,7 +96,14 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash pages;
+	struct lock hash_lock; // hash table을 수정하는 함수(insert, delete etc)는 사용할 때 동시성을 조율해야 함
 };
+
+struct frame_table {
+	struct hash frames;
+	struct lock hash_lock;
+}
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);

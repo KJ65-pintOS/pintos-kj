@@ -37,13 +37,18 @@ static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
+/* page hash functions */
+unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
+bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. */
+/* 당신은 인자로 전달한 vm_type에 맞는 적절한 초기화 함수를 가져와야 하고 이 함수를 인자로 갖는 uninit_new 함수를 호출해야 합니다. */
 bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
-
+// 페이지 구조체를 할당하고 페이지 타입에 맞는 적절한 초기화 함수를 세팅함으로써 새로운 페이지를  초기화하는 함수
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
@@ -54,7 +59,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
 
-		/* TODO: Insert the page into the spt. */
+		/* TODO: Insert the page into the spt. VM_TYPE 매크로를 사용 */
 	}
 err:
 	return false;
@@ -63,8 +68,8 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
 	/* TODO: Fill this function. */
+	struct page *page = page_lookup(&spt->pages, va);
 
 	return page;
 }
@@ -75,12 +80,21 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
-
+	// 이 함수에서 주어진 보충 테이블에서 가상 주소가 존재하지 않는지 검사해야 합니다.
+	if (!spt_find_page(spt, &page->va)) {
+		lock_acquire(&spt->hash_lock);
+		hash_insert(&spt->pages, &page->hash_elem);
+		lock_release(&spt->hash_lock);
+		succ = true;
+	}
 	return succ;
 }
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+	lock_acquire(&spt->hash_lock);
+	hash_remove(&spt->pages, &page->hash_elem);
+	lock_release(&spt->hash_lock);
 	vm_dealloc_page (page);
 	return true;
 }
@@ -89,13 +103,25 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
-	 /* TODO: The policy for eviction is up to you. */
-
+	 /* TODO: The policy for eviction is up to you. 
+	 	- LRU algorithm & Clock algorithm의 기능을 구현해야 함
+		- 같은 프레임을 참조하는 두 개 (또는 그 이상)의 페이지들인 aliases 를 조심해야 합니다. 
+			aliased 프레임이 accessed 될 때, accessed와 dirty 비트는 하나의 페이지 테이블 엔트리에서만 업데이트됩니다 (access에 쓰인 페이지에서만). 
+			다른 alias들에 대한  accessed와 dirty 비트는 업데이트 되지 않습니다.
+		- Pintos에서 모든 유저 가상 페이지는 커널 가상 페이지에 alias 되어 있습니다. 당신은 반드시 이 alias들을 관리해야 합니다. 
+			예를 들면, 당신의 코드는 양쪽 주소 모두를 위한 accessed와 dirty 비트를 확인하고 업데이트 할 수 있어야 합니다. 
+			또는, 오직 유저 가상 주소를 통해서만 유저 데이터에 접근하게 함으로써 커널이 이 문제를 피하게 할 수 있습니다.
+	 */
 	return victim;
 }
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
+/*
+1. 당신의 페이지 재배치 알고리즘을 이용하여, 쫓아낼 프레임을 고릅니다. 아래에서 설명할 “accessed”, “dirty” 비트들(페이지 테이블에 있는)이 유용할 것입니다.
+2. 해당 프레임을 참조하는 모든 페이지 테이블에서 참조를 제거합니다. 공유를 구현하지 않았을 경우, 해당 프레임을 참조하는 페이지는 항상 한 개만 존재해야 합니다.
+3. 필요하다면, 페이지를 파일 시스템이나 스왑에 write 합니다. 쫓아내어진(evicted) 프레임은 이제 다른 페이지를 저장하는 데에 사용할 수 있습니다.
+*/
 static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
@@ -108,6 +134,11 @@ vm_evict_frame (void) {
  * and return it. This always return valid address. That is, if the user pool
  * memory is full, this function evicts the frame to get the available memory
  * space.*/
+/* 위의 함수는 palloc_get_page 함수를 호출함으로써 당신의 메모리 풀에서 새로운 물리메모리 페이지를 가져옵니다. 
+ * 유저 메모리 풀에서 페이지를 성공적으로 가져오면, 프레임을 할당하고 프레임 구조체의 멤버들을 초기화한 후 해당 프레임을 반환합니다. 
+ * 당신이 frame *vm_get_frame  함수를 구현한 후에는 모든 User Space Pages들을 이 함수를 통해 할당해야 합니다.
+ * 지금으로서는 페이지 할당이 실패했을 경우의 swap out을 할 필요가 없습니다. 
+ * 일단 지금은 PANIC ("todo")으로 해당 케이스들을 표시해 두십시오.*/
 static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
@@ -129,6 +160,23 @@ vm_handle_wp (struct page *page UNUSED) {
 }
 
 /* Return true on success */
+/*
+1. 보조 페이지 테이블에서 폴트가 발생한 페이지를 찾습니다. 만일 메모리 참조가 유효하다면, 보조 페이지 엔트리를 사용해서 데이터가 들어갈 페이지를 찾으세요. 
+	그 페이지는 파일 시스템에 있거나, 스왑 슬롯에 있거나, 또는 단순히 0으로만 이루어져야 할 수도 있습니다. 
+	당신이 만약 Copy-on-Write와 같은 공유를 구현한다면, 페이지의 데이터는 이미 페이지 테이블에 없고 페이지 프레임에 들어가 있을 것입니다. 
+	만약 보조 페이지 테이블이 다음과 같은 정보를 보여주고 있다면 - 유저 프로세스가 접근하려던 주소에서 데이터를 얻을 수 없거나, 페이지가 커널 가상 메모리 영역에 존재하거나, 
+	읽기 전용 페이지에 대해 쓰기를 시도하는 상황 - 그건 유효하지 않은 접근이란 뜻입니다. 유효하지 않은 접근은 프로세스를 종료시키고 프로세스의 모든 자원을 해제합니다.
+2. 페이지를 저장하기 위해 프레임을 획득합니다. 만일 당신이 공유를 구현한다면, 필요한 데이터는 이미 프레임 안에 있을 겁니다. 
+	이 경우 해당 프레임을 찾을 수 있어야 합니다.
+3. 데이터를 파일 시스템이나 스왑에서 읽어오거나, 0으로 초기화하는 등의 방식으로 만들어서 프레임으로 가져옵니다. 
+	공유를 구현한다면, 필요한 페이지가 이미 프레임 안에 있기 때문에 지금 단계에서는 별다른 조치가 필요하지 않습니다.
+4. 폴트가 발생한 가상주소에 대한 페이지 테이블 엔트리가 물리 페이지를 가리키도록 지정합니다. `threads/mmu.c` 에 있는 함수를 사용할 수 있습니다.
+최종적으로 spt_find_page 를 거쳐 보조 페이지 테이블을 참고하여 fault된 주소에 대응하는 페이지 구조체를 해결하기 위한 함수 vm_try_handle_fault를 수정하세요.
+*/
+/* bogus page fault란?
+	- 물리 메모리와 매핑은 되어 있지만, 컨텐츠가 load되어 있지 않은 경우를 의미
+	- 컨텐츠를 load해주면 됨
+*/
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
@@ -148,7 +196,10 @@ vm_dealloc_page (struct page *page) {
 	free (page);
 }
 
-/* Claim the page that allocate on VA. */
+/* Claim이란, physical frame에 page를 할당하는 것을 의미한다 */
+/* Claim the page that allocate on VA. */ 
+/* 위 함수는 인자로 주어진 va에 페이지를 할당하고, 해당 페이지에 프레임을 할당합니다. 
+ * 당신은 우선 한 페이지를 얻어야 하고 그 이후에 해당 페이지를 인자로 갖는 vm_do_claim_page라는 함수를 호출해야 합니다.*/
 bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
@@ -158,6 +209,10 @@ vm_claim_page (void *va UNUSED) {
 }
 
 /* Claim the PAGE and set up the mmu. */
+/* 위 함수는 인자로 주어진 page에 물리 메모리 프레임을 할당합니다. 
+ * 당신은 먼저 vm_get_frame 함수를 호출함으로써 프레임 하나를 얻습니다(이 부분은 스켈레톤 코드에 구현되어 있습니다). 
+ * 그 이후 당신은 MMU를 세팅해야 하는데, 이는 가상 주소와 물리 주소를 매핑한 정보를 페이지 테이블에 추가해야 한다는 것을 의미합니다.
+ * 위의 함수는 앞에서 말한 연산이 성공적으로 수행되었을 경우에 true를 반환하고 그렇지 않을 경우에 false를 반환합니다. */
 static bool
 vm_do_claim_page (struct page *page) {
 	struct frame *frame = vm_get_frame ();
@@ -173,7 +228,10 @@ vm_do_claim_page (struct page *page) {
 
 /* Initialize new supplemental page table */
 void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_init (struct supplemental_page_table *spt) {
+	spt = palloc_get_page(0);
+	hash_init(&spt->pages, page_hash, page_less, NULL);
+	lock_init(&spt->hash_lock);
 }
 
 /* Copy supplemental page table from src to dst */
@@ -187,4 +245,29 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+}
+
+/* Returns a hash value for page p */
+unsigned
+page_hash (const struct hash_elem *p_, void *aux UNUSED) {
+	const struct page *p = hash_entry(p_, struct page, hash_elem);
+	return hash_bytes(&p->va, sizeof(p->va));
+}
+
+/* Returns true if page a precedes page b */
+bool
+page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED) {
+	const struct page *a = hash_entry(a_, struct page, hash_elem);
+	const struct page *b = hash_entry(b_, struct page, hash_elem);
+	return a->va < b->va;
+}
+
+struct page *page_lookup(struct hash *pages, const void *va) {
+	struct page p;
+	struct hash_elem *e;
+
+	p.va = va;
+	e = hash_find(pages, &p.hash_elem);
+
+	return e != NULL ? hash_entry(e, struct page, hash_elem) : NULL;
 }
