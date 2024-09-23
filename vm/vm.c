@@ -183,12 +183,7 @@ vm_do_claim_page (struct page *page) {
 // 새로운 보조 페이지 테이블을 초기화, 페이지 테이블은 해시 테이블로 관리
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
-	struct hash *page_table = malloc(sizeof(struct hash)); // 해시테이블 할당
-	if (page_table == NULL) {
-		return;
-	}
-	hash_init(page_table, page_hash, page_less, NULL); // 해시테이블 초기화
-	spt->page_table = page_table; // supplemental page table에 해시 테이블 저장
+	hash_init(&spt->pages, page_hash, page_less, NULL); // 해시테이블 초기화
 }
 
 /* Copy supplemental page table from src to dst */

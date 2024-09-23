@@ -90,7 +90,7 @@ struct page_operations {
  * All designs up to you for this. */
 struct supplemental_page_table {
 	// project 3: 보충 페이지 테이블 구조 hash table
-	struct hash *page_table;
+	struct hash *pages;
 };
 
 #include "threads/thread.h"
