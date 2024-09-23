@@ -3,9 +3,15 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "kernel/hash.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
+
+/* project3: 추가*/
+unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
+bool page_less (const struct hash_elem *a_,const struct hash_elem *b_, void *aux UNUSED);
+
 void
 vm_init (void) {
 	vm_anon_init ();
@@ -172,8 +178,17 @@ vm_do_claim_page (struct page *page) {
 }
 
 /* Initialize new supplemental page table */
+/* hash_init() 해시 테이블 hash의 해시 함수를 hash_func로, 비교 함수를 less_func로, 보조 데이터를 aux로 초기화 합니다.
+초기화 성공 시 true를, 실패 시 false를 반환합니다. */
+// 새로운 보조 페이지 테이블을 초기화, 페이지 테이블은 해시 테이블로 관리
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	struct hash *page_table = malloc(sizeof(struct hash)); // 해시테이블 할당
+	if (page_table == NULL) {
+		return;
+	}
+	hash_init(page_table, page_hash, page_less, NULL); // 해시테이블 초기화
+	spt->page_table = page_table; // supplemental page table에 해시 테이블 저장
 }
 
 /* Copy supplemental page table from src to dst */
@@ -187,4 +202,17 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+}
+
+/* project3: hash_init에 필요한 함수 추가 */
+unsigned
+page_hash (const struct hash_elem *p_, void *aux UNUSED) {
+	const struct page *p = hash_entry (p_, struct page, hash_elem);
+	return hash_bytes (&p->addr, sizeof p->addr);
+}
+
+bool
+page_less (const struct hash_elem *a_,const struct hash_elem *b_, void *aux UNUSED) {
+	const struct page *a = hash_entry(a_, struct page, hash_elem);
+	const struct page *b = hash_entry(b_, struct page, hash_elem);
 }
