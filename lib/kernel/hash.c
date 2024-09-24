@@ -9,6 +9,7 @@
 #include "../debug.h"
 #include "vm/vm.h"
 #include "threads/malloc.h"
+#include "threads/vaddr.h"
 
 #define list_elem_to_hash_elem(LIST_ELEM)                       \
 	list_entry(LIST_ELEM, struct hash_elem, list_elem)
@@ -416,7 +417,7 @@ page_lookup (const void *address) {
   struct page p;
   struct hash_elem *e;
 
-  p.va = address;
+  p.va = pg_round_down(address);
   e = hash_find (&thread_current()->spt, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }

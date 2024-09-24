@@ -61,7 +61,7 @@ struct page {
 	};
 };
 
-#define FRAME_COUNT (3 * (1 << 20)) / (PGSIZE); // 개수 -> 수정하기
+#define FRAME_COUNT (3 * (1 << 20)) / (PGSIZE) // 개수 -> 수정하기
 
 /* The representation of "frame" */
 struct frame {

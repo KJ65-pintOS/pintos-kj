@@ -171,26 +171,15 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
-	// 1. frame 동적 할당.
-	frame = malloc(sizeof(struct frame));
+	void *kva = palloc_get_page(PAL_USER);
+	if(kva == NULL) {
+		PANIC("todo");
+	}
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
 
-	// 2. palloc_get_page 를 호출 -> 사용자풀에서 새 물리적 페이지를 가져온다.
-	uint64_t *kva = palloc_get_page(PAL_USER);
-	if(kva == NULL) // 사용 가능한 페이지가 충분하지 않을 경우
-	{
-		return vm_evict_frame(); // 페이지 교체 
-	}
-
-	// 3. 성공적으로 가져왔다면 프레임을 할당하고 멤버를 초기화 한 뒤 반환한다.
 	frame->kva = kva;
-	list_push_back(&frame_table, &frame->fram_elem);
-	
-	// before implement
-	// 1. vm_get_frame 구현 -> 이 함수를 통해 모든 Palloc_User를 할당해야함.
-	// 2. 페이지 할당에 실패한 경우 swap out을 대신해서 PANIC("todo") 로 구현한다.
 	return frame;
 }
 
@@ -211,8 +200,15 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
+	if(!is_user_vaddr(addr)) {
+		return false;
+	}
+	// 스택 확장 해야하는지 확인
+	page = spt_find_page(spt, addr);
+	if(!page) {
+		return false;
+	}
 	/* TODO: Your code goes here */
-	page = spt_find_page(spt,addr);
 
 	return vm_do_claim_page (page);
 }
@@ -230,8 +226,19 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
-	// 1. va를 할당할 페이지를 요청한다.
-	// 2. 페이지를 가져오고 페이지를 사용해서 vm_do_claim_page를 호출한다.
+
+	// va에 해당하는 페이지가 존재하는지 확인
+	if(!spt_find_page(&thread_current()->spt, va)) {
+		return false;
+	}
+
+	// 페이지 구조체 생성
+	page = malloc(sizeof(struct page));
+	if(page == NULL) {
+		return false;
+	}
+	page->va = va; // 가상주소 설정
+
 	return vm_do_claim_page (page);
 }
 
@@ -240,7 +247,7 @@ static bool
 vm_do_claim_page (struct page *page) {
 	// claim : 물리적 프레임, 페이지를 할당하는 것을 의미
 	// 1. vm_get_frame을 호출 -> 프레임을 얻는다.
-	struct frame *frame = vm_get_frame ();
+	struct frame *frame = vm_get_frame();
 
 	/* Set links */
 	frame->page = page;
@@ -248,10 +255,10 @@ vm_do_claim_page (struct page *page) {
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	// 2. mmu 설정 ( 가상 주소에서 페이지 테이블의 실제 주소로 매핑을 추가 )
-	if(!pml4_set_page(&thread_current()->pml4,page->va,frame->kva,page->writable))
-	{
-
-		free(page);
+	if(!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable)) {
+		palloc_free_page(frame->kva);
+		// page 구조체와 프레임의 할당 해제도 해야하나?
+		return false;
 	}
 	
 	// 3. 작업성공 여부를 반환한다.
