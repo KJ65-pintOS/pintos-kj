@@ -46,6 +46,7 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	struct hash_elem *spt_hash_elem;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
