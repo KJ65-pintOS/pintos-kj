@@ -3,6 +3,20 @@
 #include <stdbool.h>
 #include "threads/palloc.h"
 
+/********************************************/
+/* vm, project 3 */
+
+
+#include <hash.h>
+#include "threads/synch.h"
+#include "threads/mmu.h"
+// #include "userprog/process.h"
+// #include "vm/uninit.h"
+// #include "vm/anon.h"
+// #include "vm/file.h"
+
+/********************************************/
+
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,
@@ -46,6 +60,7 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	struct hash_elem hash_elem; /* Hash table element. */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -85,6 +100,8 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash page_hash;
+	struct lock lock;
 };
 
 #include "threads/thread.h"
