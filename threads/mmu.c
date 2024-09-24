@@ -61,17 +61,27 @@ pdpe_walk (uint64_t *pdpe, const uint64_t va, int create) {
  * on CREATE.  If CREATE is true, then a new page table is
  * created and a pointer into it is returned.  Otherwise, a null
  * pointer is returned. */
+/*
+	페이지 맵 레벨 4(pml4)에서 가상 주소 VADDR에 해당하는 페이지 테이블 엔트리의 주소를 반환합니다.
+	만약 PML4E(Page Map Level 4 Entry)가 VADDR에 대한 페이지 테이블을 가지고 있지 않다면, 동작은 CREATE 매개변수에 따라 달라집니다:
+
+	CREATE가 true인 경우:
+	새로운 페이지 테이블이 생성되고, 그 테이블 내의 해당 엔트리에 대한 포인터가 반환됩니다.
+	CREATE가 false인 경우:
+	null 포인터가 반환됩니다.
+*/
 uint64_t *
 pml4e_walk (uint64_t *pml4e, const uint64_t va, int create) {
 	uint64_t *pte = NULL;
-	int idx = PML4 (va);
+	int idx = PML4 (va); // PML4 테이블에서의 인덱스 계산
 	int allocated = 0;
 	if (pml4e) {
-		uint64_t *pdpe = (uint64_t *) pml4e[idx];
+		uint64_t *pdpe = (uint64_t *) pml4e[idx]; // PML4 엔트리 가져오기
 		if (!((uint64_t) pdpe & PTE_P)) {
 			if (create) {
 				uint64_t *new_page = palloc_get_page (PAL_ZERO);
 				if (new_page) {
+					// PML4 엔트리 설정: 물리 주소 | 사용자 | 쓰기 가능 | 존재
 					pml4e[idx] = vtop (new_page) | PTE_U | PTE_W | PTE_P;
 					allocated = 1;
 				} else
@@ -79,6 +89,7 @@ pml4e_walk (uint64_t *pml4e, const uint64_t va, int create) {
 			} else
 				return NULL;
 		}
+		
 		pte = pdpe_walk (ptov (PTE_ADDR (pml4e[idx])), va, create);
 	}
 	if (pte == NULL && allocated) {

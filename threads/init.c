@@ -143,6 +143,8 @@ bss_init (void) {
 /* Populates the page table with the kernel virtual mapping,
  * and then sets up the CPU to use the new page directory.
  * Points base_pml4 to the pml4 it creates. */
+/*커널 가상 매핑으로 페이지 테이블을 채우고, 그 다음 CPU가 새로운 페이지 디렉토리를 사용하도록 설정합니다. 
+생성한 pml4(Page Map Level 4)를 base_pml4가 가리키도록 합니다.*/
 static void
 paging_init (uint64_t mem_end) {
 	uint64_t *pml4, *pte;
@@ -151,19 +153,24 @@ paging_init (uint64_t mem_end) {
 
 	extern char start, _end_kernel_text;
 	// Maps physical address [0 ~ mem_end] to
-	//   [LOADER_KERN_BASE ~ LOADER_KERN_BASE + mem_end].
+	//   가상주소 [LOADER_KERN_BASE ~ LOADER_KERN_BASE + mem_end] 로 매핑. -> 1 : 1 매핑!
 	for (uint64_t pa = 0; pa < mem_end; pa += PGSIZE) {
+		// ptov -> 물리주소를 해당하는 가상 주소로 변환
 		uint64_t va = (uint64_t) ptov(pa);
-
+		// 기본 권한 설정 : 존재(P) 및 쓰기 가능(W)
 		perm = PTE_P | PTE_W;
+		// 커널 텍스트 섹션의 경우 쓰기 권한 제거
 		if ((uint64_t) &start <= va && va < (uint64_t) &_end_kernel_text)
 			perm &= ~PTE_W;
 
+		// 페이지 테이블 엔트리 생성 , 접근.
+		// pml4e_walk(pml4, va, create) create == 1 일 경우 새로운 페이지 테이블 생성 그리고 테이블 내 해당 엔트리에 대한 포인터 반환
 		if ((pte = pml4e_walk (pml4, va, 1)) != NULL)
 			*pte = pa | perm;
 	}
 
 	// reload cr3
+	// CR3 레지스터 갱신하여 새 페이지 테이블 활성화
 	pml4_activate(0);
 }
 

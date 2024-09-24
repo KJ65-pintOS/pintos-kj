@@ -1,6 +1,7 @@
 #ifndef VM_VM_H
 #define VM_VM_H
 #include <stdbool.h>
+#include <hash.h>
 #include "threads/palloc.h"
 
 enum vm_type {
@@ -46,7 +47,8 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
-
+	bool writable;
+	struct hash_elem hash_elem;  // 해시 테이블 요소
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
@@ -59,11 +61,20 @@ struct page {
 	};
 };
 
+#define FRAME_COUNT (3 * (1 << 20)) / (PGSIZE); // 개수 -> 수정하기
+
 /* The representation of "frame" */
 struct frame {
 	void *kva;
 	struct page *page;
+
+	/*project3*/
+	int access_count; // 사용 빈도
+
+	struct list_elem fram_elem;
 };
+
+static struct list frame_table; // project 3 : frame table
 
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
@@ -85,6 +96,13 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	// 페이지 테이블을 직접 변경하지 않고 추가 정보를 보충하기 위한 구조.
+	//1. Page fault 시 보충 페이지 테이블에서 데이터를 찾아 어떤 페이지를 불어와야하는지 결정
+	//2. process가 종료 될때 보충 페이지 테이블을 통해 어떤 리소스를 해제해야할 지 결정
+
+	// 연속된 page 그룹이 필요하다. -> hash 자료구조 이용.
+	struct hash pages_map;
+	struct semaphore spt_sema;
 };
 
 #include "threads/thread.h"

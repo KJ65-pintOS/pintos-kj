@@ -52,6 +52,8 @@ uninit_initialize (struct page *page, void *kva) {
 	void *aux = uninit->aux;
 
 	/* TODO: You may need to fix this function. */
+	/* 설계에 따라서 수정해야할 수도 있음. 
+	현재 코드는 aux 함수 포인터를 통해서 page Initialzer을 호출하여 초기화 해줌*/
 	return uninit->page_initializer (page, uninit->type, kva) &&
 		(init ? init (page, aux) : true);
 }
