@@ -67,12 +67,17 @@ err:
 }
 
 /* Find VA from spt and return page. On error, return NULL. */
+/* 찾는 va와 일치하는 page 찾기 */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
+	// struct page *page = NULL; // 없어도 되는지
 	/* TODO: Fill this function. */
+	struct page page;
+  	struct hash_elem *e;
+  	page.addr = va; // va가 이미있는데 addr을 따로 만든 이유있는지
+  	e = hash_find (&spt->pages, &page.hash_elem);
 
-	return page;
+  	return e != NULL ? hash_entry(e, struct page, hash_elem) : NULL;
 }
 
 /* Insert PAGE into spt with validation. */
@@ -81,6 +86,14 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
+	// 페이지가 spt에 이미 있는지 확인
+	if(hash_find(&spt->pages, &page->hash_elem)) {
+		return succ;
+	}
+	// spt에 페이지 insert
+	if(hash_insert(&spt->pages, &page->hash_elem)== NULL) {
+		succ = true;
+	}
 
 	return succ;
 }
