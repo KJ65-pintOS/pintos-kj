@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "threads/palloc.h"
 #include <hash.h>
+#include "threads/synch.h"
 
 enum vm_type {
 	/* page not initialized */
@@ -48,6 +49,8 @@ struct page { // vm_entry의 역할
 
 	/* Your implementation */
 	struct hash_elem hash_elem;
+	bool writable;
+	bool is_user_stack; // get_victim에서 고려해야 하나?
 	int fault_cnt;
 	// location in swqp area
 	// reference to the file object and offset(memory mapped file)
@@ -70,10 +73,13 @@ struct page { // vm_entry의 역할
    - 프레임 테이블에는 각 프레임의 엔트리 정보가 담겨 있습니다. 
    - 프레임 테이블의 각 엔트리에는 현재 해당 엔트리를 차지하고 있는 페이지에 대한 포인터(있는 경우라면), 그리고 당신의 선택에 따라 넣을 수 있는 기타 데이터들이 담겨 있습니다. 
    - 프레임 테이블은 비어있는 프레임이 없을 때 쫓아낼 페이지를 골라줌으로써, Pintos가 효율적으로 eviction policy를 구현할 수 있도록 해줍니다.
+	palloc.c의 user_pool 봐야 함. user_pool.bitmap.cnt = 생성 가능 총 page 갯수. base = 시작 kva. 이걸로 frame table의 key로 구성해야
+	extern keyword로 잘 받아올 것.
 */
 struct frame {
 	void *kva;
 	struct page *page;
+	struct hash_elem hash_elem;
 };
 
 /* The function table for page operations.
@@ -103,7 +109,8 @@ struct supplemental_page_table {
 struct frame_table {
 	struct hash frames;
 	struct lock hash_lock;
-}
+	int usable_page_cnt;
+};
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);
@@ -126,5 +133,4 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
-
 #endif  /* VM_VM_H */
