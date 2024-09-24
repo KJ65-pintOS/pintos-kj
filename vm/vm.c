@@ -74,7 +74,7 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	/* TODO: Fill this function. */
 	struct page page;
   	struct hash_elem *e;
-  	page.addr = va; // va가 이미있는데 addr을 따로 만든 이유있는지
+  	page.va = va;
   	e = hash_find (&spt->pages, &page.hash_elem);
 
   	return e != NULL ? hash_entry(e, struct page, hash_elem) : NULL;
@@ -90,10 +90,12 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 	if(hash_find(&spt->pages, &page->hash_elem)) {
 		return succ;
 	}
-	// spt에 페이지 insert
+	// spt에 페이지 insert, lock으로 동시성 문제 해결
+	lock_acquire(&spt->spt_lock);
 	if(hash_insert(&spt->pages, &page->hash_elem)== NULL) {
 		succ = true;
 	}
+	lock_release(&spt->spt_lock);
 
 	return succ;
 }
@@ -197,6 +199,7 @@ vm_do_claim_page (struct page *page) {
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 	hash_init(&spt->pages, page_hash, page_less, NULL); // 해시테이블 초기화
+	lock_init(&spt->spt_lock); // lock 초기화
 }
 
 /* Copy supplemental page table from src to dst */
@@ -216,7 +219,7 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 unsigned
 page_hash (const struct hash_elem *p_, void *aux UNUSED) {
 	const struct page *p = hash_entry (p_, struct page, hash_elem);
-	return hash_bytes (&p->addr, sizeof p->addr);
+	return hash_bytes (&p->va, sizeof p->va);
 }
 
 bool

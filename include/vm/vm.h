@@ -49,7 +49,7 @@ struct page {
 	/* Your implementation */
 	// project 3
 	struct hash_elem hash_elem; // Hash table element
-	void *addr; // Virtual address
+	// void *addr; // Virtual address, 위에 va 사용하면 됨
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -91,6 +91,7 @@ struct page_operations {
 struct supplemental_page_table {
 	// project 3: 보충 페이지 테이블 구조 hash table
 	struct hash *pages;
+	struct lock spt_lock;
 };
 
 #include "threads/thread.h"
