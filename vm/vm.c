@@ -63,10 +63,15 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
-	/* TODO: Fill this function. */
+	struct page target_page;
+	target_page.va = va;
+	struct hash_elem *elem = hash_find(&spt->spt_hash, &target_page.spt_hash_elem);
 
-	return page;
+	if (elem != NULL)
+	{
+		return hash_entry(elem, struct page, spt_hash_elem);
+	}
+	return NULL;	
 }
 
 /* Insert PAGE into spt with validation. */
@@ -74,8 +79,12 @@ bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
-	/* TODO: Fill this function. */
+	struct hash_elem *elem = hash_insert(&spt->spt_hash, &page->spt_hash_elem);
 
+	if (elem == NULL)
+	{
+		succ = true;
+	}
 	return succ;
 }
 
@@ -174,6 +183,18 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	hash_init(&spt->spt_hash, page_hash, page_less, NULL);
+}
+
+unsigned page_hash(const struct hash_elem *p_, void *aux UNUSED){
+	const struct page *p = hash_entry(p_, struct page, spt_hash_elem);
+	return hash_bytes(&p->va, sizeof p->va);
+}
+
+bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED){
+	const struct page *a = hash_entry(a_, struct page, spt_hash_elem);
+	const struct page *b = hash_entry(b_, struct page, spt_hash_elem);
+	return a->va < b->va;
 }
 
 /* Copy supplemental page table from src to dst */
