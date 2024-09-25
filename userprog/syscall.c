@@ -26,6 +26,7 @@ void syscall_handler (struct intr_frame *);
 #include "userprog/process.h"
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
+#include "vm/vm.h"
 
 typedef void 
 syscall_handler_func(struct intr_frame *);
@@ -407,7 +408,7 @@ static bool
 is_vaddr_valid(void* vaddr)
 {
 	return !(is_kernel_vaddr(vaddr) 
-		|| pml4_get_page(thread_current()->pml4, vaddr) == NULL 
+		|| spt_find_page(&thread_current()->spt, vaddr) == NULL
 		|| vaddr == NULL);
 }
 

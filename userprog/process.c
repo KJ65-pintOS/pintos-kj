@@ -880,16 +880,7 @@ install_page (void *upage, void *kpage, bool writable) {
 	return (pml4_get_page (t->pml4, upage) == NULL
 			&& pml4_set_page (t->pml4, upage, kpage, writable));
 }
-
-
 #else
-struct load_args {
-	struct file *file;
-	off_t ofs;
-	size_t page_read_bytes;
-	size_t page_zero_bytes;
-	bool writable;
-};
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
@@ -908,11 +899,12 @@ lazy_load_segment (struct page *page, void *aux) {
 	file_seek(load_args->file, load_args->ofs);
 	if (file_read(load_args->file, kpage, load_args->page_read_bytes) != (int)load_args->page_read_bytes) {
 		palloc_free_page(kpage);
+		free(aux);
 		return false;
 	}
 	memset(kpage + load_args->page_read_bytes, 0, load_args->page_zero_bytes);
 
-	palloc_free_page(aux);
+	free(aux);
 
 	return true;
 }
@@ -954,7 +946,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		struct load_args *aux = palloc_get_page(0);
+		struct load_args *aux = malloc(sizeof(struct load_args));
 		struct load_args load_args = {
 			.file = file,
 			.ofs = ofs,

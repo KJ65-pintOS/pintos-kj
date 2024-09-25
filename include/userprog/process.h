@@ -57,6 +57,14 @@ struct process {
     struct list_elem elem;
 };
 
+struct load_args {
+	struct file *file;
+	off_t ofs;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
+	bool writable;
+};
+
 
 #endif
 /* file descriptor, project 2 */

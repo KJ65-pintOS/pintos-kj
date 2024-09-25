@@ -45,6 +45,7 @@ static struct frame *vm_evict_frame (void);
 /* page hash functions */
 unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
 bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+void page_free (struct hash_elem *p_, void *aux UNUSED);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -236,11 +237,8 @@ vm_try_handle_fault (struct intr_frame *f, void *addr,
 	*/
 	struct thread *current = thread_current();
 	
-	if (page == NULL || is_kernel_vaddr(addr)) {
-		current->exit_code = -1;
-		thread_exit();
+	if (page == NULL || is_kernel_vaddr(addr))
 		return false;
-	}
 	/* TODO: Your code goes here */
 
 
@@ -283,6 +281,10 @@ vm_do_claim_page (struct page *page) {
 	struct thread *t = thread_current();
 	if (!(pml4_get_page (t->pml4, page->va) == NULL
 			&& pml4_set_page (t->pml4, page->va, frame->kva, page->writable))) {		
+		palloc_free_page(frame->kva);
+		free(frame);
+		free(page);
+		NOT_REACHED();
 		return false;
 	}
 
@@ -302,11 +304,36 @@ void supplemental_page_table_init (struct supplemental_page_table *spt) {
 	이것은 자식이 부모의 실행 context를 상속할 필요가 있을 때 사용됩니다. (예 - fork()). 
 	src의 supplemental page table를 반복하면서 
 	dst의 supplemental page table의 엔트리의 정확한 복사본을 만드세요. 
-	당신은 초기화되지않은(uninit) 페이지를 할당하고 그것들을 바로 요청할 필요가 있을 것입니다.
+	당신은 초기화되지않은(uninit) 페이지를 할당하고 그것들을 바로 claim할 필요가 있을 것입니다.
 */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst,
+		struct supplemental_page_table *src) {
+	struct hash_iterator itr;
+	hash_first(&itr, src);
+	while (hash_next(&itr)) {
+		struct page *origin = hash_entry(hash_cur(&itr), struct page, hash_elem);
+		enum vm_type page_type = origin->operations->type;
+
+		if (page_type == VM_UNINIT) {
+			struct load_args *cpy_aux = malloc(sizeof(struct load_args));
+			memcpy(cpy_aux, origin->uninit.aux, sizeof(struct load_args));
+			if (!vm_alloc_page_with_initializer(origin->uninit.type, origin->va, origin->writable, origin->uninit.init, cpy_aux))
+				return false;
+			continue;
+		}
+
+		/* VM_ANON & VM_FILE */
+		if (!(vm_alloc_page(page_type, origin->va, origin->writable) &&
+					vm_claim_page(origin->va)))
+			return false;
+
+		struct page *copy = spt_find_page(dst, origin->va);
+		if (copy == NULL) 
+			return false;
+		memcpy(copy->frame->kva, origin->frame->kva, PGSIZE);
+	}
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -318,9 +345,13 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 	supplemental page table이 정리되어지고 나서, 호출자가 그것들을 정리할 것입니다.
 */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	if (!hash_empty(&spt->pages))
+		hash_destroy(&spt->pages, page_free);
+
+	// writeback all the modified contents to the storage!! - mmap 시?
 }
 
 /* Returns a hash value for page p */
@@ -336,6 +367,11 @@ page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUS
 	const struct page *a = hash_entry(a_, struct page, hash_elem);
 	const struct page *b = hash_entry(b_, struct page, hash_elem);
 	return a->va < b->va;
+}
+
+void page_free (struct hash_elem *p_, void *aux UNUSED) {
+	const struct page *p = hash_entry (p_, struct page, hash_elem);
+	free(p);
 }
 
 unsigned
