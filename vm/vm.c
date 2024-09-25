@@ -150,19 +150,18 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
-	frame = malloc(sizeof(struct frame));  // 프레임 할당
 
-	ASSERT (frame != NULL);
-	frame->page = NULL;
-
-	uint64_t *kva = palloc_get_page(PAL_USER);  // 사용자 풀에서 새 물리 메모리 가져오기
+	void *kva = palloc_get_page(PAL_USER);  // 사용자 풀에서 새 물리 메모리 가져오기
 	if (kva == NULL)  // 사용가능한 페이지가 없다면
 	{
 		PANIC("todo");  //swap 구현
 	}
+	frame = malloc(sizeof(struct frame));  // 프레임 할당
 	frame->kva = kva;  // 성공적으로 물리 페이지를 가져오면 프레임 초기화
+	frame->page = NULL;
 	list_push_back(&frame_table, &frame->frame_elem);  // 할당한 프레임을 프레임 테이블에 입력
-
+	ASSERT (frame != NULL);
+	ASSERT (frame->page == NULL);
 	return frame;  // 할당된 프레임 반환
 }
 
