@@ -69,7 +69,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		// 2. fetch the initialier according to the VM type
 		vm_initializer *initialier = NULL;
-		switch (type)
+		switch (VM_TYPE(type))
 		{
 		case VM_ANON:
 			initialier = anon_initializer;
@@ -90,6 +90,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
     
 		/* TODO: Insert the page into the spt. */
 		// 4. Insert the page into the spt
+		
 		if(!spt_insert_page(spt,page))  // 해당 페이지를 spt에 추가한다.
 		{
 			free(page);
@@ -111,16 +112,15 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 		주어진 보충 페이지 테이블에서 
 		va에 해당하는 구조체 페이지를 찾습니다. 실패하면 NULL을 반환합니다.
 	*/
-
-	page = page_lookup (va);
+	page = page_lookup (pg_round_down(va));
 
 	return page;
 }
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+spt_insert_page (struct supplemental_page_table *spt,
+		struct page *page) {
 	int succ = false;
 	/* TODO: Fill this function. */
 	/*
@@ -132,9 +132,11 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		return succ;
 
 	// 2. spt에 page 삽입.
-	sema_down(&spt->spt_sema);
-	hash_insert(&spt->pages_map, &page->hash_elem);
-	sema_up(&spt->spt_sema);
+	
+	lock_acquire(&spt->spt_lock);
+	if(!hash_insert(&spt->pages_map, &page->hash_elem))
+		succ = true;
+	lock_release(&spt->spt_lock);
 	return succ;
 }
 
@@ -149,6 +151,15 @@ static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
+	// 1. access_count가 제일 작은 페이지로 교체.
+	// 2. access bit를 보면서 accessed 되지 않을 것 위주로 호출
+	// ? : frame_table의 frame은 언제나 1개이상을 보장하는가?
+	victim = list_find(&frame_table,find_frame_by_un_accbit,NULL);
+
+	if(victim == NULL)
+	{
+		// 다 accessbit가 활성화되어있을경우?ㅠ
+	}
 
 	return victim;
 }
@@ -157,10 +168,29 @@ vm_get_victim (void) {
  * Return NULL on error.*/
 static struct frame *
 vm_evict_frame (void) {
-	struct frame *victim UNUSED = vm_get_victim ();
+	struct frame *victim  = vm_get_victim (); // 1. 퇴출 시킬 frame을 선정한다.
 	/* TODO: swap out the victim and return the evicted frame. */
+	if (victim == NULL)
+        PANIC("No victim frame found");
+	
+	// 2. swap out and check
+	if(pml4_is_dirty(thread_current()->pml4, victim->page))
+	{
+		if(!swap_out (victim->page))
+			PANIC("Swap out failed");
+	}
+    	
+	// 3. frame table update
+	list_remove(&victim->frame_elem);
 
-	return NULL;
+	// 4. page table entry update
+	pml4_clear_page(thread_current()->pml4, victim->page->va);
+
+	// victim 프레임 초기화
+    victim->page = NULL;
+    victim->access_count = 0;
+
+    return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -174,20 +204,24 @@ vm_get_frame (void) {
 	// 1. frame 동적 할당.
 	frame = malloc(sizeof(struct frame));
 
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
-
+	// 초기화
+    frame->page = NULL;
+	frame->access_count = 0;
 	// 2. palloc_get_page 를 호출 -> 사용자풀에서 새 물리적 페이지를 가져온다.
 	uint64_t *kva = palloc_get_page(PAL_USER);
 	if(kva == NULL) // 사용 가능한 페이지가 충분하지 않을 경우
 	{
+		free(frame);
 		return vm_evict_frame(); // 페이지 교체 
 	}
 
 	// 3. 성공적으로 가져왔다면 프레임을 할당하고 멤버를 초기화 한 뒤 반환한다.
 	frame->kva = kva;
-	list_push_back(&frame_table, &frame->fram_elem);
+	list_push_back(&frame_table, &frame->frame_elem);
 	
+	ASSERT (frame != NULL); // frame이 성공적으로 할당 되었는지 보장
+	ASSERT (frame->page == NULL); // frame이 페이지와 연결이 안되어있음을 보장
+
 	// before implement
 	// 1. vm_get_frame 구현 -> 이 함수를 통해 모든 Palloc_User를 할당해야함.
 	// 2. 페이지 할당에 실패한 경우 swap out을 대신해서 PANIC("todo") 로 구현한다.
@@ -197,6 +231,7 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+
 }
 
 /* Handle the fault on write_protected page */
@@ -227,11 +262,12 @@ vm_dealloc_page (struct page *page) {
 
 /* Claim the page that allocate on VA. */
 bool
-vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
+vm_claim_page (void *va) {
+	struct page *page =  spt_find_page(&thread_current()->pml4, va);
 	/* TODO: Fill this function */
 	// 1. va를 할당할 페이지를 요청한다.
 	// 2. 페이지를 가져오고 페이지를 사용해서 vm_do_claim_page를 호출한다.
+
 	return vm_do_claim_page (page);
 }
 
@@ -240,7 +276,12 @@ static bool
 vm_do_claim_page (struct page *page) {
 	// claim : 물리적 프레임, 페이지를 할당하는 것을 의미
 	// 1. vm_get_frame을 호출 -> 프레임을 얻는다.
-	struct frame *frame = vm_get_frame ();
+	struct frame *frame = NULL;
+	bool success = false;
+	frame = vm_get_frame ();
+	if (frame == NULL) {
+        return false;
+    }
 
 	/* Set links */
 	frame->page = page;
@@ -248,14 +289,22 @@ vm_do_claim_page (struct page *page) {
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	// 2. mmu 설정 ( 가상 주소에서 페이지 테이블의 실제 주소로 매핑을 추가 )
-	if(!pml4_set_page(&thread_current()->pml4,page->va,frame->kva,page->writable))
+	if (pml4_get_page(thread_current()->pml4, page->va) == NULL &&
+        pml4_set_page(thread_current()->pml4, page->va, frame->kva, page->writable)) {
+		success = true;
+    }
+	else
 	{
-
+		// 페이지 테이블 설정 실패 시 정리 작업
+        page->frame = NULL;
+        frame->page = NULL;
+        palloc_free_page(frame->kva); // 물리적 페이지 해제
+        free(frame);  // 프레임 구조체 해제
 		free(page);
 	}
-	
+
 	// 3. 작업성공 여부를 반환한다.
-	return swap_in (page, frame->kva);
+	return success ? swap_in (page, frame->kva) : false;
 }
 
 /* Initialize new supplemental page table */
@@ -268,7 +317,7 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 		(userprog/process.c의 __do_fork에서) 호출됩니다.
 	*/
 	hash_init(&spt->pages_map, page_hash, page_less, NULL);
-	sema_init(&spt->spt_sema, 1);
+	lock_init(&spt->spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */
@@ -284,4 +333,16 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 	
+}
+
+static bool find_frame_by_un_accbit(struct list_elem *e_, void *aux UNUSED)
+{
+	struct frame* p = list_entry(e_, struct frame, frame_elem);
+
+	bool access = pml4_is_accessed(&thread_current()->spt, p->page);
+
+	// access bit 리셋
+	pml4_set_accessed(&thread_current()->spt,p->page, false);
+
+	return !access; // access 안한 frame이면 리턴 true
 }

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <hash.h>
 #include "threads/palloc.h"
+#include "threads/synch.h"
 
 enum vm_type {
 	/* page not initialized */
@@ -61,7 +62,7 @@ struct page {
 	};
 };
 
-#define FRAME_COUNT (3 * (1 << 20)) / (PGSIZE); // 개수 -> 수정하기
+#define FRAME_COUNT (int)(3 * (1 << 20)) / (PGSIZE) // 개수 -> 수정하기
 
 /* The representation of "frame" */
 struct frame {
@@ -71,7 +72,7 @@ struct frame {
 	/*project3*/
 	int access_count; // 사용 빈도
 
-	struct list_elem fram_elem;
+	struct list_elem frame_elem;
 };
 
 static struct list frame_table; // project 3 : frame table
@@ -102,7 +103,7 @@ struct supplemental_page_table {
 
 	// 연속된 page 그룹이 필요하다. -> hash 자료구조 이용.
 	struct hash pages_map;
-	struct semaphore spt_sema;
+	struct lock spt_lock;
 };
 
 #include "threads/thread.h"
@@ -126,5 +127,7 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
+static bool find_frame_by_un_accbit(struct list_elem *e_, void *aux UNUSED);
 
 #endif  /* VM_VM_H */

@@ -127,7 +127,10 @@ syscall_init (void) {
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f UNUSED) {
-
+#ifdef VM
+struct thread *t = thread_current();
+t->tf.rsp = f->rsp;
+#endif
 #ifdef USERPROG /* syscall, project 2 */
 
 	syscall_handler_func *handler;
