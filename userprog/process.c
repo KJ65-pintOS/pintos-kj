@@ -55,6 +55,17 @@ find_process_by_tid(struct list_elem* e_, void* aux);
 static void 
 notice_to_parent(struct process * process, int status);
 
+/***********************************************************************/
+/* project 3*/
+struct aux_info {
+	struct file *file;
+	off_t ofs;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
+
+};
+
+/***********************************************************************/
 
 #endif
 /* userprogram, project 2 */
@@ -680,7 +691,7 @@ setup_argument(struct intr_frame* if_, const char* file_name)
 	
 	argv_size = strlen(file_name) + 1;
 	if_->rsp -= argv_size;
-	memcpy(if_->rsp, file_name, argv_size);
+	memcpy((void *)if_->rsp, file_name, argv_size);
 
 	for(token = strtok_r(if_->rsp, " " , &save_ptr); token != NULL; 
 		token = strtok_r(NULL," ", &save_ptr))
@@ -914,8 +925,11 @@ lazy_load_segment (struct page *page, void *aux) {
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
+	//1. read byte 수 + zero byte 수 가 page size에 맞는지 확인
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
+	//2. 페이지의 가상주소가 4kb에 align 되어 있는지 확인
 	ASSERT (pg_ofs (upage) == 0);
+	//3. 오프셋이 페이지의 경계에 맞는지 확인
 	ASSERT (ofs % PGSIZE == 0);
 
 	while (read_bytes > 0 || zero_bytes > 0) {
@@ -927,6 +941,19 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
 		void *aux = NULL;
+
+		/**********************************************************************/
+		/* project 3 */
+		struct aux_info *aux_info = malloc(sizeof(struct aux_info));
+
+		aux_info->file = file;
+		aux_info->ofs=ofs;
+		aux_info->page_read_bytes=page_read_bytes;
+		aux_info->page_zero_bytes=page_zero_bytes;
+
+		aux=aux_info;
+		/**********************************************************************/
+		
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
 					writable, lazy_load_segment, aux))
 			return false;

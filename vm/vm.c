@@ -8,6 +8,7 @@
 /* supplemental page table, project 3*/
 #include "hash.h"
 #include "threads/vaddr.h"
+#include "threads/mmu.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -62,11 +63,37 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
 		/* TODO: Create the page, fetch the initialier according to the VM type,
-
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
-
 		/* TODO: Insert the page into the spt. */
+
+		/*********************************/
+		/* supplemental page table, project 3*/
+
+		//1.이 함수는 페이지 구조체를 할당하고
+		struct page *new_page = malloc(sizeof(struct page));
+
+		//2. type에 따라 초기화 함수 다르게 설정
+		bool (*initializer)(struct page *page, enum vm_type type, void *kva);
+
+		switch(type) {
+			case VM_ANON:
+			initializer=anon_initializer;
+			break;
+			case VM_FILE:
+			initializer=file_backed_initializer;
+			break;
+		}
+
+		// 3. create "uninit" page struct by calling uninit_new
+		// 초기화되지 않은 페이지 구조체를 설정
+		uninit_new(new_page,upage,init,type,aux,initializer);
+		new_page->writable = writable;
+
+		//4. Insert the page into the spt.
+		return spt_insert_page(spt,new_page);
+
+		/*********************************/
 	}
 err:
 	return false;
@@ -102,7 +129,7 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 	// int succ = false;
 	// /* TODO: Fill this function. */
 
-	// /*********************************/
+	/*********************************/
 	// /* supplemental page table, project 3*/
 
 	// struct hash_elem *result;
@@ -112,12 +139,13 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 	// 	return succ; //false 반환
 	// }
 	// // 2.없다면, spt에 해당 페이지 넣기
-	// hash_insert(&spt->hash_spt, &page->hash_elem);
+	// hash_insert(spt->hash_spt, &page->hash_elem);
 	// succ = true;
-	// /*********************************/
+
 	// return succ; //true 
 
-	return hash_insert(&spt,&page->hash_elem) == NULL ? true : false;
+	return hash_insert(spt, &page->hash_elem) == NULL ? true : false;
+	/*********************************/
 }
 
 void
@@ -208,7 +236,17 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
+	
+	/*********************************/
+	/*project 3*/
+	ASSERT(is_user_vaddr(va));
+	struct supplemental_page_table *spt = &thread_current()->spt;
+	page = spt_find_page(spt,va);
+	if (page==NULL) {
+		return false;
+	}
 
+	/*********************************/
 	return vm_do_claim_page (page);
 }
 
@@ -222,8 +260,12 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+
+	/*********************************/
+	/*project 3*/
 	uint64_t *cur_thread_page_table= thread_current()->pml4;
 	pml4_set_page(cur_thread_page_table,page,frame,page->writable);
+	/*********************************/
 
 	return swap_in (page, frame->kva);
 }
@@ -231,7 +273,7 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
-	hash_init (spt->hash_spt, page_hash, page_less, NULL);
+	hash_init (&spt->hash_spt, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
@@ -249,7 +291,6 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 
 /*********************************/
 /* supplemental page table, project 3*/
-
 
 /* Returns a hash value for page p. */
 unsigned
