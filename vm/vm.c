@@ -204,6 +204,8 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	// 하나 이상의 anonymous 페이지를 할당하여 스택 크기를 늘림 이로써 addr은 page fault에서 유효한 주소가 됩니다.
+	// 페이지를 할당할때 pgsize 기준으로 내림하세요
 }
 
 /* Handle the fault on write_protected page */
@@ -217,6 +219,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = NULL;
+
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
