@@ -27,6 +27,10 @@ enum vm_type {
 #include "vm/uninit.h"
 #include "vm/anon.h"
 #include "vm/file.h"
+/*********************************/
+/* supplemental page table, project 3*/
+#include "hash.h"
+/*********************************/
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
@@ -46,6 +50,12 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	/*********************************/
+	/* supplemental page table, project 3*/
+	struct hash_elem hash_elem;
+	bool writable;
+
+	/*********************************/
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -85,6 +95,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
+	struct hash *hash_spt;
 };
 
 #include "threads/thread.h"
