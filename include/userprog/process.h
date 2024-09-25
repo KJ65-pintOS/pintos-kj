@@ -61,8 +61,15 @@ struct process {
 #endif
 /* file descriptor, project 2 */
 /*********************************************/
+/* vm, project 3 */
 
+struct load_args{
+    struct file* file;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
+};
 
+/* vm, project 3 */
 
 
 
