@@ -48,6 +48,7 @@ struct page {
 
 	/* Your implementation */
 	struct hash_elem spt_hash_elem;
+	bool writable;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -61,10 +62,23 @@ struct page {
 	};
 };
 
+#define FRAME_COUNT (3 * (1 << 20)) / (PGSIZE)
+
 /* The representation of "frame" */
 struct frame {
 	void *kva;
 	struct page *page;
+	int access_count;
+	struct list_elem frame_elem;
+};
+
+static struct list frame_table;
+
+struct lazy_load_info{
+	struct file *file;
+	off_t ofs;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
 };
 
 /* The function table for page operations.

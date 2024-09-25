@@ -1,6 +1,8 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
 #include "threads/malloc.h"
+#include "threads/vaddr.h"
+#include "threads/mmu.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
 
@@ -16,6 +18,7 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -55,7 +58,33 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: should modify the field after calling the uninit_new. */
 
 		/* TODO: Insert the page into the spt. */
+		struct page *page = malloc(sizeof(struct page));
+		if (page == NULL)
+		{
+			goto err;
+		}
+		vm_initializer *initializer = NULL;
+		switch (VM_TYPE(type))
+		{
+		case VM_ANON:
+			initializer = anon_initializer;
+			break;
+		case VM_FILE:
+			initializer = file_backed_initializer;
+			break;
+		default:
+			goto err;
+		}
+		uninit_new(page, upage, init, type, aux, initializer);
+		page->writable = writable;
+
+		if (!spt_insert_page(spt, page))
+		{
+			free(page);
+			goto err;
+		}
 	}
+	return true;
 err:
 	return false;
 }
@@ -64,7 +93,7 @@ err:
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	struct page target_page;
-	target_page.va = va;
+	target_page.va = pg_round_down(va);
 	struct hash_elem *elem = hash_find(&spt->spt_hash, &target_page.spt_hash_elem);
 
 	if (elem != NULL)
@@ -121,10 +150,20 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	frame = malloc(sizeof(struct frame));  // 프레임 할당
 
 	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
-	return frame;
+	frame->page = NULL;
+
+	uint64_t *kva = palloc_get_page(PAL_USER);  // 사용자 풀에서 새 물리 메모리 가져오기
+	if (kva == NULL)  // 사용가능한 페이지가 없다면
+	{
+		PANIC("todo");  //swap 구현
+	}
+	frame->kva = kva;  // 성공적으로 물리 페이지를 가져오면 프레임 초기화
+	list_push_back(&frame_table, &frame->frame_elem);  // 할당한 프레임을 프레임 테이블에 입력
+
+	return frame;  // 할당된 프레임 반환
 }
 
 /* Growing the stack. */
@@ -145,8 +184,28 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-
+	if (addr == NULL)
+	{
+		return false;
+	}
+	if (!is_user_vaddr(addr))
+	{
+		return false;
+	}
+	if (not_present)
+	{
+		page = spt_find_page(spt, addr);
+		if (page == NULL)
+		{
+			return false;
+		}
+		if (write == 1 && page->writable == 0)
+		{
+			return false;
+		}
 	return vm_do_claim_page (page);
+	}
+	return false;
 }
 
 /* Free the page.
@@ -162,20 +221,28 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
+	page = spt_find_page(&thread_current()->spt, va);  // spt에서 va에 해당하는 페이지 찾기
 
-	return vm_do_claim_page (page);
+	if (page == NULL)  // spt에 페이지가 없으면 false 반환
+	{
+		return false;
+	}
+
+	return vm_do_claim_page (page);  // 물리 메모리 클레임
 }
 
 /* Claim the PAGE and set up the mmu. */
 static bool
 vm_do_claim_page (struct page *page) {
-	struct frame *frame = vm_get_frame ();
+	struct frame *frame = vm_get_frame ();  //프레임 얻어오기
 
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	struct thread *current = thread_current();
+	pml4_set_page(current->pml4, page->va, frame->kva, page->writable);
 
 	return swap_in (page, frame->kva);
 }
