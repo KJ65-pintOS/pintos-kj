@@ -2,7 +2,6 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
-
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,
@@ -34,6 +33,18 @@ enum vm_type {
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
+/***********************************************************************/
+/* project 3*/
+#include "filesys/off_t.h"
+
+
+struct aux_info {
+	struct file *file;
+	off_t ofs;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
+};
+/***********************************************************************/
 
 struct page_operations;
 struct thread;
@@ -121,3 +132,4 @@ bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
 #endif  /* VM_VM_H */
+
