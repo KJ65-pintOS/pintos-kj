@@ -22,6 +22,7 @@ vm_init (void) {
 	
 	// Frame Table 생성 및 초기화
 	list_init(&frame_table);
+	lock_init(&frame_table_lock);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -157,7 +158,9 @@ bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
+	lock_acquire(&spt->spt_lock);
 	struct hash_elem *elem = hash_insert(&spt->pages_map, &page->hash_elem);
+	lock_release(&spt->spt_lock);
 
 	if (elem == NULL) {
 		succ = true;
@@ -203,12 +206,18 @@ vm_get_frame (void) {
 	if(kva == NULL) {
 		PANIC("todo");
 	}
+
 	frame = malloc(sizeof(struct frame));
 	frame->kva = kva;
 	frame->page = NULL;
-	list_push_back(&frame_table, &frame->fram_elem);
+
+    lock_acquire(&frame_table_lock);
+    list_push_back(&frame_table, &frame->fram_elem);
+    lock_release(&frame_table_lock);
+
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
+
 	return frame;
 }
 
@@ -286,13 +295,12 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-	// 2. mmu 설정 ( 가상 주소에서 페이지 테이블의 실제 주소로 매핑을 추가 )
-	// if(!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable)) {
-	// 	palloc_free_page(frame->kva);
-	// 	// page 구조체와 프레임의 할당 해제도 해야하나?
-	// 	return false;
-	// }
-	pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable);
+	//2. mmu 설정 ( 가상 주소에서 페이지 테이블의 실제 주소로 매핑을 추가 )
+	if(!pml4_set_page(thread_current()->pml4, page->va, frame->kva, page->writable)) {
+		palloc_free_page(frame->kva);
+		// page 구조체와 프레임의 할당 해제도 해야하나?
+		return false;
+	}
 	
 	// 3. 작업성공 여부를 반환한다.
 	return swap_in (page, frame->kva);
@@ -308,7 +316,7 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 		(userprog/process.c의 __do_fork에서) 호출됩니다.
 	*/
 	hash_init(&spt->pages_map, page_hash, page_less, NULL);
-	sema_init(&spt->spt_sema, 1);
+	lock_init(&spt->spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */
