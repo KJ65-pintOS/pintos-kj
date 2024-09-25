@@ -2,6 +2,7 @@
 
 #include "vm/vm.h"
 #include "devices/disk.h"
+#include "threads/vaddr.h"
 
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
@@ -34,6 +35,9 @@ anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	// 익명 페이지에 대한 처리기를 설정 해준다.
 	// 비어있는 페이지 일부 정보를 수정해야 할 수도 있다.
 	struct anon_page *anon_page = &page->anon;
+	
+	memset(kva, 0, PGSIZE);
+	return true;
 }
 
 /* Swap in the page by read contents from the swap disk. */

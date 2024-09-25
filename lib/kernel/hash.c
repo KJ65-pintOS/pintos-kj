@@ -417,7 +417,7 @@ page_lookup (const void *address) {
   struct page p;
   struct hash_elem *e;
 
-  p.va = pg_round_down(address);
+  p.va = address;
   e = hash_find (&thread_current()->spt, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }

@@ -69,7 +69,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		// 2. fetch the initialier according to the VM type
 		vm_initializer *initialier = NULL;
-		switch (type)
+		switch (VM_TYPE(type))
 		{
 		case VM_ANON:
 			initialier = anon_initializer;
@@ -78,6 +78,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			initialier = file_backed_initializer;
 			break;
 		default:
+			free(page);
 			goto err;
 		}
 
@@ -90,7 +91,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
     
 		/* TODO: Insert the page into the spt. */
 		// 4. Insert the page into the spt
-		if(!spt_insert_page(spt,page))  // 해당 페이지를 spt에 추가한다.
+		if(!spt_insert_page(spt, page))  // 해당 페이지를 spt에 추가한다.
 		{
 			free(page);
 			goto err;
@@ -102,19 +103,53 @@ err:
 	return false;
 }
 
+// /* Find VA from spt and return page. On error, return NULL. */
+// struct page *
+// spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+// 	struct page *page = NULL;
+// 	/* TODO: Fill this function. */
+// 	/*
+// 		주어진 보충 페이지 테이블에서 
+// 		va에 해당하는 구조체 페이지를 찾습니다. 실패하면 NULL을 반환합니다.
+// 	*/
+// 	va = pg_round_down(va);
+// 	page = page_lookup(va);
+
+// 	return page;
+// }
+
+// /* Insert PAGE into spt with validation. */
+// bool
+// spt_insert_page (struct supplemental_page_table *spt UNUSED,
+// 		struct page *page UNUSED) {
+// 	int succ = false;
+// 	/* TODO: Fill this function. */
+// 	/*
+// 		struct page를 주어진 보충 페이지 테이블에 삽입합니다. 
+// 		이 함수는 가상 주소가 지정된 추가 페이지 테이블에 없는지 확인해야 합니다.
+// 	*/
+// 	// 1. 추가할 페이지가 spt에 있는지 확인해야함.
+// 	if(hash_find(&spt->pages_map, &page->hash_elem) != NULL) // NULL 이 아니면 있다는 뜻이므로 false return
+// 		return succ;
+
+// 	// 2. spt에 page 삽입.
+// 	sema_down(&spt->spt_sema);
+// 	hash_insert(&spt->pages_map, &page->hash_elem);
+// 	sema_up(&spt->spt_sema);
+// 	return succ;
+// }
+
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
-	/* TODO: Fill this function. */
-	/*
-		주어진 보충 페이지 테이블에서 
-		va에 해당하는 구조체 페이지를 찾습니다. 실패하면 NULL을 반환합니다.
-	*/
+	struct page target_page;
+	target_page.va = pg_round_down(va);
+	struct hash_elem *elem = hash_find(&spt->pages_map, &target_page.hash_elem);
 
-	page = page_lookup (va);
-
-	return page;
+	if (elem != NULL) {
+		return hash_entry(elem, struct page, hash_elem);
+	}
+	return NULL;	
 }
 
 /* Insert PAGE into spt with validation. */
@@ -122,19 +157,11 @@ bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
-	/* TODO: Fill this function. */
-	/*
-		struct page를 주어진 보충 페이지 테이블에 삽입합니다. 
-		이 함수는 가상 주소가 지정된 추가 페이지 테이블에 없는지 확인해야 합니다.
-	*/
-	// 1. 추가할 페이지가 spt에 있는지 확인해야함.
-	if(hash_find(&spt->pages_map, &page->hash_elem) != NULL) // NULL 이 아니면 있다는 뜻이므로 false return
-		return succ;
+	struct hash_elem *elem = hash_insert(&spt->pages_map, &page->hash_elem);
 
-	// 2. spt에 page 삽입.
-	sema_down(&spt->spt_sema);
-	hash_insert(&spt->pages_map, &page->hash_elem);
-	sema_up(&spt->spt_sema);
+	if (elem == NULL) {
+		succ = true;
+	}
 	return succ;
 }
 
@@ -171,15 +198,17 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+
 	void *kva = palloc_get_page(PAL_USER);
 	if(kva == NULL) {
 		PANIC("todo");
 	}
-
+	frame = malloc(sizeof(struct frame));
+	frame->kva = kva;
+	frame->page = NULL;
+	list_push_back(&frame_table, &frame->fram_elem);
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
-
-	frame->kva = kva;
 	return frame;
 }
 
@@ -200,17 +229,24 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
+	// 스택 확장 해야하는지 확인
+	if(!addr) {
+		return false;
+	}
 	if(!is_user_vaddr(addr)) {
 		return false;
 	}
-	// 스택 확장 해야하는지 확인
-	page = spt_find_page(spt, addr);
-	if(!page) {
-		return false;
+	if(not_present) {
+		page = spt_find_page(spt, addr);
+		if(!page) {
+			return false;
+		}
+		if(write == 1 && page->writable == 0) {
+			return false;
+		}
+		return vm_do_claim_page (page);
 	}
-	/* TODO: Your code goes here */
-
-	return vm_do_claim_page (page);
+	return false;
 }
 
 /* Free the page.
@@ -226,18 +262,11 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
+	page = spt_find_page(&thread_current()->spt, va);
 
-	// va에 해당하는 페이지가 존재하는지 확인
-	if(!spt_find_page(&thread_current()->spt, va)) {
+	if(!page) {
 		return false;
 	}
-
-	// 페이지 구조체 생성
-	page = malloc(sizeof(struct page));
-	if(page == NULL) {
-		return false;
-	}
-	page->va = va; // 가상주소 설정
 
 	return vm_do_claim_page (page);
 }
@@ -248,6 +277,9 @@ vm_do_claim_page (struct page *page) {
 	// claim : 물리적 프레임, 페이지를 할당하는 것을 의미
 	// 1. vm_get_frame을 호출 -> 프레임을 얻는다.
 	struct frame *frame = vm_get_frame();
+	if(frame == NULL) {
+		return false;
+	}
 
 	/* Set links */
 	frame->page = page;
@@ -255,11 +287,12 @@ vm_do_claim_page (struct page *page) {
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
 	// 2. mmu 설정 ( 가상 주소에서 페이지 테이블의 실제 주소로 매핑을 추가 )
-	if(!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable)) {
-		palloc_free_page(frame->kva);
-		// page 구조체와 프레임의 할당 해제도 해야하나?
-		return false;
-	}
+	// if(!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable)) {
+	// 	palloc_free_page(frame->kva);
+	// 	// page 구조체와 프레임의 할당 해제도 해야하나?
+	// 	return false;
+	// }
+	pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable);
 	
 	// 3. 작업성공 여부를 반환한다.
 	return swap_in (page, frame->kva);
