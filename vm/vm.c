@@ -4,6 +4,7 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include "kernel/hash.h"
+#include "threads/mmu.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -74,7 +75,7 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	/* TODO: Fill this function. */
 	struct page page;
   	struct hash_elem *e;
-  	page.va = va;
+  	page.va = pg_round_down(va);
   	e = hash_find (&spt->pages, &page.hash_elem);
 
   	return e != NULL ? hash_entry(e, struct page, hash_elem) : NULL;
@@ -133,9 +134,15 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	void *kva = palloc_get_page(PAL_USER);
+	if(kva == NULL) {
+		PANIC("todo");
+	}
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
+
+	frame->kva = kva;
 	return frame;
 }
 
@@ -156,8 +163,18 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
+	// 스택 확장해야하는지 확인 추가필요
+	if(!is_user_vaddr(addr)) {
+		return false;
+	}
 
+	page = spt_find_page(spt, addr);
+
+	if(!page) {
+		return false;
+	}
+
+	/* TODO: Your code goes here */
 	return vm_do_claim_page (page);
 }
 
@@ -170,10 +187,18 @@ vm_dealloc_page (struct page *page) {
 }
 
 /* Claim the page that allocate on VA. */
+// claim - 물리적 프레임, 페이지를 할당하는 것을 의미
 bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
+
+	// spt에서 va와 일치하는 페이지 찾기
+	page = spt_find_page(&thread_current()->spt, va);
+	
+	if(page == NULL) {
+		return false;
+	}
 
 	return vm_do_claim_page (page);
 }
@@ -188,6 +213,10 @@ vm_do_claim_page (struct page *page) {
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	if(!pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable)) {
+		palloc_free_page(frame->kva);
+		return false;
+	}
 
 	return swap_in (page, frame->kva);
 }
@@ -213,17 +242,4 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-}
-
-/* project3: hash_init에 필요한 함수 추가 */
-unsigned
-page_hash (const struct hash_elem *p_, void *aux UNUSED) {
-	const struct page *p = hash_entry (p_, struct page, hash_elem);
-	return hash_bytes (&p->va, sizeof p->va);
-}
-
-bool
-page_less (const struct hash_elem *a_,const struct hash_elem *b_, void *aux UNUSED) {
-	const struct page *a = hash_entry(a_, struct page, hash_elem);
-	const struct page *b = hash_entry(b_, struct page, hash_elem);
 }
