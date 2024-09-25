@@ -21,6 +21,10 @@
 #include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
+/***********************************************************************/
+/* project 3 */
+#include "lib/stdint.h"
+/***********************************************************************/
 #endif
 
 #include "threads/malloc.h"
@@ -978,6 +982,21 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
 
+	/**********************************************************************/
+	/* project 3 */
+
+	//1. stack bottom을 stack에 매핑함
+	uint8_t *kpage=palloc_get_page(PAL_USER|PAL_ZERO);
+	if (kpage != NULL) {
+		static bool success = install_page(stack_bottom,kpage,/*writable 여부???*/);
+	}
+	//2. 만약 mapping에 성공하면, rsp를 설정하기
+	if (success) {
+		if_->rsp = stack_bottom;
+	}
+	//3.해당 페이지가 stack이라는 것을 mark하기
+
+	/**********************************************************************/
 	return success;
 }
 #endif /* VM */
