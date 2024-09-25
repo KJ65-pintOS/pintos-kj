@@ -220,7 +220,22 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
+	ASSERT(is_user_vaddr(addr));
+	page = spt_find_page(spt,addr);
+	if(page==NULL) {
 	return vm_do_claim_page (page);
+	}
+
+	// 스택 포인터 아래 8바이트에 대해서 PAGE FAULT를 발생시킬 수 있다.
+	// intr_frame rsp에서 얻을 수 잇다.
+	// 잘못된 메모리 접근을 감지하기 위해 PAGE FAULT에 의존하는 경우 커널에서 PAGE FAULT 가 발생하는 경우도 처리해야함
+	// 프로세스가 스택 포인터를 저장하는 것은 예외로 인해 유저 모드에서 커널 모드로 전환될 때 뿐이므로 page_fault()로 전달된 struct intr_frame 에서 rsp를 읽으면 유저 스택 포인터가 아닌 정의되지 않은 값을 얻을 수 있습니다. 유저 모드에서 커널 모드로 전환 시 rsp를 struct thread에 저장하는 것과 같은 다른 방법을 준비해야 합니다.
+
+	// 스택 증가를 확인, 확인 후 vm_stack_growth를 호출하여 스택을 증가시켜야함
+	// page fault가 스택을 증가시켜야하는 경우에 해당하는지 아닌지를 확인해야함
+	// 스택 증가로 page fault 예외를 처리할 수 있는지 확인한 경우 page fualt가 발생한 주소로 vm_stack_growth를 호출해야함
+
+	// return vm_do_claim_page (page);
 }
 
 /* Free the page.
