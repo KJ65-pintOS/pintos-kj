@@ -102,7 +102,7 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
    /* TODO: Fill this function. */
    page = (struct page*)malloc(sizeof(struct page));
    struct hash_elem *e;
-   
+
    page->va = pg_round_down(va);
    e = hash_find(&(spt->pages), &(page->hash_elem));
 
@@ -349,7 +349,7 @@ supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 	if (!hash_empty(&spt->pages))
-		hash_destroy(&spt->pages, page_free);
+		hash_clear(&spt->pages, page_free);
 
 	// writeback all the modified contents to the storage!! - mmap 시?
 }
