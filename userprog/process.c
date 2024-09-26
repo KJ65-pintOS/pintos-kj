@@ -59,17 +59,6 @@ find_process_by_tid(struct list_elem* e_, void* aux);
 static void 
 notice_to_parent(struct process * process, int status);
 
-/***********************************************************************/
-/* project 3*/
-struct aux_info {
-	struct file *file;
-	off_t ofs;
-	size_t page_read_bytes;
-	size_t page_zero_bytes;
-
-};
-
-/***********************************************************************/
 
 #endif
 /* userprogram, project 2 */
@@ -985,17 +974,14 @@ setup_stack (struct intr_frame *if_) {
 	/**********************************************************************/
 	/* project 3 */
 
-	//1. stack bottom을 stack에 매핑함
-	uint8_t *kpage=palloc_get_page(PAL_USER|PAL_ZERO);
-	if (kpage != NULL) {
-		static bool success = install_page(stack_bottom,kpage,/*writable 여부???*/);
+	//1. stack bottom을 stack에 매핑함, 해당 페이지가 stack이라는 것을 mark하기
+	if(vm_alloc_page(VM_ANON|VM_MARKER_0,stack_bottom,1)) {
+		success = vm_claim_page(stack_bottom);
+		if (success) {
+			if_->rsp = USER_STACK;
+		} 
 	}
-	//2. 만약 mapping에 성공하면, rsp를 설정하기
-	if (success) {
-		if_->rsp = stack_bottom;
-	}
-	//3.해당 페이지가 stack이라는 것을 mark하기
-
+	
 	/**********************************************************************/
 	return success;
 }
