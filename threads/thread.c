@@ -931,6 +931,14 @@ mlfqs_set_priority(struct thread* t)
 /* advanced scheduling, project 1 */
 /*****************************************************************/
 /* user program, project 2 */
+
+void 
+thread_exit_by_error(int exit_code){
+	/* for debug */
+	struct thread* t = thread_current();
+	thread_current()->exit_code = exit_code;
+	thread_exit();
+}
 #ifdef USERPROG
 
 

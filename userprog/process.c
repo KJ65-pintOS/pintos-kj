@@ -74,8 +74,7 @@ process_init (void) {
 	if((fd_table = palloc_get_page(0)) == NULL){
 		/* fd_table 생성 실패시에 부모가 알수있게 값을 변경하고 자신은 종료됨. */
 		notice_to_parent(current->process,PROCESS_FAILED);
-		thread_current()->exit_code = -1;
-		thread_exit();
+		thread_exit_by_error(-1);
 	}
 	init_fd(fd_table);
 	current->fd_table = fd_table;
@@ -566,10 +565,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	table = get_user_fd(thread_current());
 	
 	if( ( fd = find_empty_fd(table)) == FD_ERROR )
-	{
-		thread_current()->exit_code = -1;
-		thread_exit();
-	}
+		thread_exit_by_error(-1);
 	set_fd( table ,fd , file);
 
 	/* Read and verify executable header. */
@@ -944,13 +940,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (upage) == 0);
-	ASSERT (ofs % PGSIZE == 0);
 
-	/************************************************/
 	/* vm, project 3 */
 	struct load_args* args;
-
-	/************************************************/
+	void *aux;
 
 	while (read_bytes > 0 || zero_bytes > 0) {
 		/* Do calculate how to fill this page.
@@ -960,8 +953,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
 		/* vm, project 3 */
+		
+		aux = NULL;
 		args = (struct load_args*)malloc(sizeof(struct load_args));
 		args->file = file;
 		args->page_read_bytes = page_read_bytes;

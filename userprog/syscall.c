@@ -181,21 +181,24 @@ exec_handler(struct intr_frame* f)
 	const char *fn_copy;
 	const char* file_name; 
 	
+	fn_copy = NULL;
 	file_name = (char*)f->R.rdi;
-	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-	}
 
-	if(!is_vaddr_valid(file_name) || *file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
-	}
-	strlcpy(fn_copy, file_name, strlen(file_name) + 1);
+	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL)
+		goto err;
+	if(!is_vaddr_valid(file_name) || *file_name == NULL)
+		goto err;
+	if(!strlcpy(fn_copy, file_name, strlen(file_name) + 1))
+		goto err;
 
 	/* exec에 실패할 경우에만 return value가 존재함. */
 	f->R.rax = process_exec(fn_copy);
+	return;
+err:
+	if(fn_copy)
+		free(fn_copy);
+	thread_exit_by_error(-1);
+	return;
 }
 
 static void 
@@ -218,11 +221,8 @@ create_handler(struct intr_frame* f)
 	file_name = (char*)f->R.rdi;
 	initial_size = (unsigned)f->R.rsi;
 
-	if(!is_vaddr_valid(file_name) || *file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
-	}
+	if(!is_vaddr_valid(file_name) || *file_name == NULL)
+		thread_exit_by_error(-1);
 
 	f->R.rax = filesys_create(file_name, initial_size);
 }
@@ -248,11 +248,9 @@ read_handler(struct intr_frame* f)
 	buffer = f->R.rsi;
 	size = f->R.rdx;
 
-	if(!is_vaddr_valid(buffer) ||  fd == STDOUT_FILENO){
-		thread_current()->exit_code = -1;
-		thread_exit(); 
-		NOT_REACHED();
-	}
+	if(!is_vaddr_valid(buffer) ||  fd == STDOUT_FILENO)
+		thread_exit_by_error(-1);
+	
 	struct thread* t = thread_current();
 	if((file = get_file_by_fd(fd))== NULL){
 		f->R.rax = -1;
@@ -271,11 +269,8 @@ open_handler(struct intr_frame *f)
 
 	/* Open executable file. */
 	file_name = f->R.rdi;
-	if(!is_vaddr_valid(file_name) || file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
-	}
+	if(!is_vaddr_valid(file_name) || file_name == NULL)
+		thread_exit_by_error(-1);
 
 	file = filesys_open (file_name);
 	if (file == NULL) {
@@ -326,11 +321,8 @@ write_handler(struct intr_frame* f)
 		return;
 	}
 
-	if( !is_vaddr_valid(buffer) || fd == STDIN_FILENO) {
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
-	}
+	if( !is_vaddr_valid(buffer) || fd == STDIN_FILENO)
+		thread_exit_by_error(-1);
 
 	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
@@ -406,9 +398,15 @@ get_file_by_fd(int fd)
 static bool
 is_vaddr_valid(void* vaddr)
 {
-	return !(is_kernel_vaddr(vaddr) 
+	#ifndef VM
+		return !(is_kernel_vaddr(vaddr) 
 		|| pml4_get_page(thread_current()->pml4, vaddr) == NULL 
 		|| vaddr == NULL);
+	#else
+		return !(is_kernel_vaddr(vaddr) 
+		|| spt_find_page(&thread_current()->spt, vaddr) == NULL
+		|| vaddr == NULL);
+	#endif
 }
 
 /***********************************************************/
