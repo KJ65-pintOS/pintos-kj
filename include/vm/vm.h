@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "threads/palloc.h"
 #include "lib/kernel/hash.h" 
+#include "threads/synch.h"
 
 enum vm_type {
 	/* page not initialized */
@@ -102,6 +103,7 @@ struct page_operations {
  * All designs up to you for this. */
 struct supplemental_page_table {
 	struct hash spt_hash;
+	struct lock spt_lock;
 };
 
 #include "threads/thread.h"
@@ -127,5 +129,6 @@ bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 unsigned page_hash(const struct hash_elem *p_, void *aux UNUSED);
 bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+void clear_page(struct hash_elem *e, void *aux);
 
 #endif  /* VM_VM_H */

@@ -900,11 +900,9 @@ lazy_load_segment (struct page *page, void *aux) {
 	if (file_read(info->file, page->frame->kva, info->page_read_bytes) != (int)info->page_read_bytes)
 	{
 		palloc_free_page(page->frame->kva);
-		free(aux);
 		return false;
 	}
 	memset(page->frame->kva + info->page_read_bytes, 0, info->page_zero_bytes);
-	free(aux);
 	return true;
 }
 
@@ -951,7 +949,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
 					writable, lazy_load_segment, aux)){
-			free(aux);
 			return false;
 		}
 

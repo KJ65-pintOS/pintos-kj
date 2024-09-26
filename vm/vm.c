@@ -5,6 +5,10 @@
 #include "threads/mmu.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "hash.h"
+#include <string.h>
+#include "vm/uninit.h"
+#include <stdio.h>
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -108,7 +112,9 @@ bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
+	lock_acquire(&spt->spt_lock);
 	struct hash_elem *elem = hash_insert(&spt->spt_hash, &page->spt_hash_elem);
+	lock_release(&spt->spt_lock);
 
 	if (elem == NULL)
 	{
@@ -250,6 +256,7 @@ vm_do_claim_page (struct page *page) {
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 	hash_init(&spt->spt_hash, page_hash, page_less, NULL);
+	lock_init(&spt->spt_lock);
 }
 
 unsigned page_hash(const struct hash_elem *p_, void *aux UNUSED){
@@ -267,6 +274,35 @@ bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
+	struct hash_iterator i;
+	hash_first(&i, &src->spt_hash);
+	while (hash_next(&i))
+	{
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, spt_hash_elem);
+		enum vm_type type = src_page->operations->type;
+		void *upage = src_page->va;
+		bool writable = src_page->writable;
+		
+		if (type == VM_UNINIT)
+		{
+			vm_initializer *init = src_page->uninit.init;
+			void *aux = src_page->uninit.aux;
+			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, aux);
+			continue;
+		}
+		if (!vm_alloc_page(type, upage, writable))
+		{
+			return false;
+		}
+		if (!vm_claim_page(upage))
+		{
+			return false;
+		}
+		
+		struct page *dst_page = spt_find_page(dst, upage);
+		memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+	}
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -274,4 +310,11 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_clear(&spt->spt_hash, clear_page);
+}
+
+void clear_page(struct hash_elem *e, void *aux){
+	struct page *page = hash_entry(e, struct page, spt_hash_elem);
+	destroy(page);
+	free(page);
 }
