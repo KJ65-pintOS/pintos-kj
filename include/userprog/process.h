@@ -67,6 +67,7 @@ struct load_args{
     struct file* file;
 	size_t page_read_bytes;
 	size_t page_zero_bytes;
+    off_t ofs;
 };
 
 /* vm, project 3 */

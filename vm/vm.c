@@ -107,7 +107,7 @@ struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	if(hash_empty(&spt->page_hash))
 		return NULL;
-	return page_lookup(&spt->page_hash,pg_round_down(va));
+	return page_lookup(&spt->page_hash,va);
 }
 
 /* Insert PAGE into spt with validation. */
@@ -302,6 +302,7 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_clear(&spt->page_hash,NULL);
 	//hash_destroy(&spt->page_hash, NULL);
 }
 
@@ -313,7 +314,7 @@ page_hash(const struct hash_elem *e_, void *aux){
   return hash_bytes (&e->va, sizeof e->va);
 }
 static bool 
-page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux){
+page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED){
 	const struct page *a = hash_entry (a_, struct page, hash_elem);
 	const struct page *b = hash_entry (b_, struct page, hash_elem);
 	return a->va < b->va;

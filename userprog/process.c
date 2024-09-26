@@ -900,6 +900,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	struct file* file;
 	struct frame* f;
 	void * kva;
+	off_t ofs;
 
 	size_t page_read_bytes;
 	size_t page_zero_bytes;
@@ -911,8 +912,10 @@ lazy_load_segment (struct page *page, void *aux) {
 	file = args->file;
 	page_read_bytes = args->page_read_bytes;
 	page_zero_bytes = args->page_zero_bytes;
+	ofs = args->ofs;
 	free(aux);
 
+	file_seek(file,ofs);
 	if (file_read (file, kva, page_read_bytes) != (int) page_read_bytes) {
 		palloc_free_page (kva);
 		return false;
@@ -963,6 +966,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		args->file = file;
 		args->page_read_bytes = page_read_bytes;
 		args->page_zero_bytes = page_zero_bytes;
+		args->ofs = ofs;
 		aux = args;
 
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
@@ -973,6 +977,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
 	}
 	return true;
 }
