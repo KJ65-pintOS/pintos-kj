@@ -41,6 +41,7 @@ page_get_type (struct page *page) {
 static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
+bool is_stack_addr(void*, bool, struct thread *);
 
 /* page hash functions */
 unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
@@ -77,6 +78,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			default:
 				goto err;
 		}
+
 
 		uninit_new(page, upage, init, type, aux, page_initializer);
 
@@ -193,9 +195,26 @@ vm_get_frame (void) {
 	return frame;
 }
 
-/* Growing the stack. */
+/* Growing the stack. 
+	하나 이상의 anonymous 페이지를 할당하여 스택 크기를 늘립니다. 
+	이로써 addr은 faulted 주소(폴트가 발생하는 주소) 에서 유효한 주소가 됩니다.  
+	페이지를 할당할 때는 주소를 PGSIZE 기준으로 내림하세요.
+	max size of stack is 1MB
+*/
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	void *new_stack_bottom = pg_round_down(addr);
+	struct thread *current = thread_current();
+	bool success = false;
+	while (new_stack_bottom < current->stack_bottom) {
+		if (!(vm_alloc_page(VM_ANON | VM_MARKER_0, new_stack_bottom, true) &&
+					vm_claim_page(new_stack_bottom))){
+			current->exit_code = -1;
+			thread_exit();
+		}
+		new_stack_bottom += PGSIZE;
+	}
+	thread_current()->stack_bottom = pg_round_down(addr);
 }
 
 /* Handle the fault on write_protected page */
@@ -228,19 +247,21 @@ vm_handle_wp (struct page *page UNUSED) {
 bool
 vm_try_handle_fault (struct intr_frame *f, void *addr,
 		bool user, bool write, bool not_present) {
-	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct thread *current = thread_current();
+	struct supplemental_page_table *spt = &current->spt;
 	struct page *page = spt_find_page(spt, addr);
 	/* TODO: Validate the fault. 기본 케이스부터 통과하고 생각하자
 		- 유저 프로세스가 접근하려던 주소에서 데이터를 얻을 수 없거나
 		- 페이지가 커널 가상 메모리 영역에 존재하거나, 
 		- 읽기 전용 페이지에 대해 쓰기를 시도하는 상황
 	*/
-	struct thread *current = thread_current();
+	if (is_stack_addr(addr, write, current)) {
+		vm_stack_growth(addr);
+		return true;
+	}
 	
 	if (page == NULL || is_kernel_vaddr(addr))
 		return false;
-	/* TODO: Your code goes here */
-
 
 	return vm_do_claim_page (page);
 }
@@ -352,6 +373,10 @@ supplemental_page_table_kill (struct supplemental_page_table *spt) {
 		hash_clear(&spt->pages, page_free);
 
 	// writeback all the modified contents to the storage!! - mmap 시?
+}
+
+bool is_stack_addr(void* addr, bool write, struct thread *current) {
+	return addr < current->stack_bottom && addr >= MAX_USER_STACK_BOTTOM && write;
 }
 
 /* Returns a hash value for page p */
