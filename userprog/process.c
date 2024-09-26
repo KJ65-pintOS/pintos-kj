@@ -910,9 +910,11 @@ lazy_load_segment (struct page *page, struct aux_info *aux) {
 
 	// off_t page_read_bytes = file_read_at(file,page->va,page_read_bytes,ofs);
 	if (file_read(file,page->frame->kva,page_read_bytes) != page_read_bytes) {
+		palloc_free_page(page->frame->kva);
 		return false;
 	}
 	memset((void *)page->frame->kva,0,page_zero_bytes);
+
 	return true;
 }
 
