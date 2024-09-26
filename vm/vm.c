@@ -4,8 +4,10 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 
-/*************************************************/
 
+/*************************************************/
+#include <string.h>
+#include <userprog/process.h>
 
 static uint64_t 
 page_hash(const struct hash_elem *e_, void *aux);
@@ -16,6 +18,9 @@ page_lookup (struct hash* hash, const void *va);
 
 static void
 vm_free_frame(struct frame *frame);
+
+static void 
+page_duplicate(struct hash_elem *e, void *aux);
 
 /*************************************************/
 
@@ -111,7 +116,9 @@ struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 	if(hash_empty(&spt->page_hash))
 		return NULL;
-	return page_lookup(&spt->page_hash,va);
+	struct page* page = NULL;
+	page = page_lookup(&spt->page_hash,va);
+	return page;
 }
 
 /* Insert PAGE into spt with validation. */
@@ -223,9 +230,10 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	/* TODO: Your code goes here */
 	succ = false;
 	spt = &thread_current()->spt;
-
+	struct thread* t = thread_current();
 	if((page = spt_find_page(spt,addr)) == NULL){
 		/* page가 없는경우, 이상동작, 종료 */
+		ASSERT(page != NULL);
 		return false;
 	}
 
@@ -273,6 +281,10 @@ vm_do_claim_page (struct page *page) {
 
 	struct frame *frame;
 	uint64_t *pml4;
+	
+	if(page == NULL)
+		ASSERT(page != NULL);
+	ASSERT(page->frame == NULL);
 
 	if((frame = vm_get_frame()) == NULL)
 		goto err;
@@ -306,9 +318,15 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
-	if( src == NULL)
-		return false;
-	memcpy(dst, src, sizeof(src));
+
+	ASSERT(dst != NULL);
+	ASSERT(src != NULL);
+
+	/* page_duplicate에 넣어줄 aux를 세팅하고 사용이후 NULL로 초기화하여 이상동작 방지 */
+	src->page_hash.aux = dst;
+	hash_apply(&src->page_hash,page_duplicate);
+	src->page_hash.aux = NULL;
+
 	return true;
 }
 
@@ -344,4 +362,44 @@ page_lookup (struct hash* hash, const void *va) {
   e = hash_find (hash, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }
+static void 
+page_duplicate(struct hash_elem *e, void *aux){
+	struct supplemental_page_table* spt;
+	const struct page *src_page;
+	struct page* page;
+	enum vm_type page_type;
+
+	ASSERT( aux != NULL);
+
+	spt = (struct supplemental_page_table*)aux;
+	src_page = hash_entry(e, struct page, hash_elem);
+
+	if((page  = malloc(sizeof(struct page))) == NULL){
+		/* malloc 실패한 경우 */
+		ASSERT(page);
+	}
+	memcpy(page,src_page,sizeof(struct page)); 
+	page_type = page->operations->type;
+	switch (page_type){
+		case VM_FILE:
+		case VM_ANON:
+			page->frame = NULL;
+			if(!vm_do_claim_page(page)){
+				ASSERT(false);
+			}
+			memcpy(page->frame->kva, src_page->frame->kva,PGSIZE); 
+			break;
+		case VM_UNINIT:
+
+		break;
+	}
+	if(page_type == VM_UNINIT){
+		struct uninit_page *uninit = &page->uninit;
+		struct load_args* aux = malloc(sizeof(struct load_args));
+		memcpy(aux, uninit->aux, sizeof(struct load_args));
+		uninit->aux = aux;
+	}
+	spt_insert_page(spt,page);
+}
+
 /***********************************************************************/

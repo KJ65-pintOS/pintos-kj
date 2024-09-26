@@ -26,6 +26,7 @@ void syscall_handler (struct intr_frame *);
 #include "userprog/process.h"
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
+#include "vm/vm.h"
 
 typedef void 
 syscall_handler_func(struct intr_frame *);
@@ -184,20 +185,22 @@ exec_handler(struct intr_frame* f)
 	fn_copy = NULL;
 	file_name = (char*)f->R.rdi;
 
-	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL)
+
+	if(!(is_vaddr_valid(file_name) && *file_name != NULL))
 		goto err;
-	if(!is_vaddr_valid(file_name) || *file_name == NULL)
+	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL)
 		goto err;
 	if(!strlcpy(fn_copy, file_name, strlen(file_name) + 1))
 		goto err;
 
 	/* exec에 실패할 경우에만 return value가 존재함. */
 	f->R.rax = process_exec(fn_copy);
-	return;
+
+	thread_exit_by_error(-1);
 err:
 	if(fn_copy)
 		free(fn_copy);
-	thread_exit_by_error(-1);
+	f->R.rax = -1;
 	return;
 }
 
@@ -397,15 +400,13 @@ get_file_by_fd(int fd)
 
 static bool
 is_vaddr_valid(void* vaddr)
-{
+{	
 	#ifndef VM
-		return !(is_kernel_vaddr(vaddr) 
-		|| pml4_get_page(thread_current()->pml4, vaddr) == NULL 
-		|| vaddr == NULL);
+		return is_user_vaddr(vaddr)
+		&& pml4_get_page(thread_current()->pml4, vaddr);
 	#else
-		return !(is_kernel_vaddr(vaddr) 
-		|| spt_find_page(&thread_current()->spt, vaddr) == NULL
-		|| vaddr == NULL);
+		return is_user_vaddr(vaddr)
+		&& spt_find_page(&thread_current()->spt, vaddr);
 	#endif
 }
 
