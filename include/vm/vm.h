@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "threads/palloc.h"
 #include "kernel/hash.h"
+#include "threads/synch.h"
 
 enum vm_type
 {
@@ -75,6 +76,7 @@ struct frame
 {
 	void *kva;
 	struct page *page;
+	struct hash_elem hash_elem;
 };
 
 /* The function table for page operations.
@@ -101,19 +103,25 @@ struct page_operations
 struct supplemental_page_table
 {
 	// project 3: 보충 페이지 테이블 구조 hash table
-	struct hash *pages;
-	struct lock *spt_lock;
+	struct hash pages;
+	struct lock hash_lock;
+};
+
+/* project 3 frame_table */
+struct frame_table {
+	struct hash frames;
+	struct lock hash_lock;
+	int usable_page_cnt;
 };
 
 // project3 Anonymous page - struct for lazy_load_segment
 
-struct load_info
+struct lazy_load_info
 {
 	struct file *file; // 파일 포인터
 	off_t offset;	   // 파일 오프셋
-	size_t read_bytes; // 파일에서 읽을 바이트 수
-	size_t zero_bytes; // 0으로 채울 바이트 수
-	uint8_t *upage;	   // 가상 주소 (메모리에서 페이지가 위치할 곳)
+	size_t page_read_bytes; // 파일에서 읽을 바이트 수
+	size_t page_zero_bytes; // 0으로 채울 바이트 수
 	bool writable;	   // 페이지가 쓰기 가능한지 여부
 };
 
