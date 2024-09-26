@@ -407,7 +407,8 @@ static bool
 is_vaddr_valid(void* vaddr)
 {
 	return !(is_kernel_vaddr(vaddr) 
-		|| pml4_get_page(thread_current()->pml4, vaddr) == NULL 
+		//|| pml4_get_page(thread_current()->pml4, vaddr) == NULL 
+		|| spt_find_page(&thread_current()->spt, vaddr) == NULL
 		|| vaddr == NULL);
 }
 
