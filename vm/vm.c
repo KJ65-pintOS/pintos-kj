@@ -76,7 +76,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		//2. type에 따라 초기화 함수 다르게 설정
 		bool (*initializer)(struct page *page, enum vm_type type, void *kva);
 
-		switch(type) {
+		switch(VM_TYPE(type)) {
 			case VM_ANON:
 			initializer=anon_initializer;
 			break;
