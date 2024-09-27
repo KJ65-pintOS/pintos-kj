@@ -399,6 +399,7 @@ page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUS
 
 void page_free (struct hash_elem *p_, void *aux UNUSED) {
 	const struct page *p = hash_entry (p_, struct page, hash_elem);
+	destroy(p);
 	free(p);
 }
 
