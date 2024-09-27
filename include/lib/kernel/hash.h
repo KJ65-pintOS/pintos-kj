@@ -102,4 +102,5 @@ bool page_less (const struct hash_elem *a_,
            const struct hash_elem *b_);
 
 struct page * page_lookup (const void *address);
+void clear_page(struct hash_elem *e, void *aux);
 #endif /* lib/kernel/hash.h */

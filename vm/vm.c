@@ -128,13 +128,13 @@ spt_insert_page (struct supplemental_page_table *spt,
 		이 함수는 가상 주소가 지정된 추가 페이지 테이블에 없는지 확인해야 합니다.
 	*/
 	// 1. 추가할 페이지가 spt에 있는지 확인해야함.
-	if(hash_find(&spt->pages_map, &page->hash_elem) != NULL) // NULL 이 아니면 있다는 뜻이므로 false return
+	if(hash_find(&spt->page_hash, &page->hash_elem) != NULL) // NULL 이 아니면 있다는 뜻이므로 false return
 		return succ;
 
 	// 2. spt에 page 삽입.
 	
 	lock_acquire(&spt->spt_lock);
-	if(!hash_insert(&spt->pages_map, &page->hash_elem))
+	if(!hash_insert(&spt->page_hash, &page->hash_elem))
 		succ = true;
 	lock_release(&spt->spt_lock);
 	return succ;
@@ -316,26 +316,69 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 		이 함수는 새 프로세스가 시작될 때(userprog/process.c의 initd에서) 프로세스가 분기될 때
 		(userprog/process.c의 __do_fork에서) 호출됩니다.
 	*/
-	hash_init(&spt->pages_map, page_hash, page_less, NULL);
+	memset(spt, 0, sizeof(spt));
+	hash_init(&spt->page_hash, page_hash, page_less, NULL);
 	lock_init(&spt->spt_lock);
 }
 
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst,
+		struct supplemental_page_table *src) {
 	
+	struct hash_iterator i;
+	hash_first(&i, &src->page_hash);
+	while (hash_next(&i))
+	{
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+		enum vm_type type = src_page->operations->type;
+		void *upage = src_page->va;
+		bool writable = src_page->writable;
+		
+		switch (VM_TYPE(type))
+		{
+		case VM_UNINIT:
+		{
+			vm_initializer *init = src_page->uninit.init;
+			struct load_file_info *aux = malloc(sizeof(struct load_file_info));
+			if(aux == NULL)
+				return false;
+			memcpy(aux, src_page->uninit.aux, sizeof(struct load_file_info));
+
+			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, aux);
+
+			break;
+		}
+		case VM_ANON:
+			if (!vm_alloc_page(type, upage, writable))
+			{
+				return false;
+			}
+			if (!vm_claim_page(upage))
+			{
+				return false;
+			}
+		
+			struct page *dst_page = spt_find_page(dst, upage);
+			memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+		default:
+			break;
+		}
+		
+		
+	}
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-	
+	hash_clear(&spt->page_hash, clear_page);
 }
 
-static bool find_frame_by_un_accbit(struct list_elem *e_, void *aux UNUSED)
+static bool find_frame_by_un_accbit(struct list_elem *e_, void *aux UNUSED) 
 {
 	struct frame* p = list_entry(e_, struct frame, frame_elem);
 

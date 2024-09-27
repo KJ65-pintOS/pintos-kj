@@ -420,3 +420,9 @@ page_lookup (const void *address) {
   e = hash_find (&thread_current()->spt, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }
+
+void clear_page(struct hash_elem *e, void *aux){
+	struct page *page = hash_entry(e, struct page, hash_elem);
+	destroy(page);
+	free(page);
+}

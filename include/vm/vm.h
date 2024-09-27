@@ -77,6 +77,14 @@ struct frame {
 
 static struct list frame_table; // project 3 : frame table
 
+struct load_file_info{
+	struct file *file;
+	off_t ofs;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
+	bool writable;
+};
+
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
  * Put the table of "method" into the struct's member, and
@@ -102,7 +110,7 @@ struct supplemental_page_table {
 	//2. process가 종료 될때 보충 페이지 테이블을 통해 어떤 리소스를 해제해야할 지 결정
 
 	// 연속된 page 그룹이 필요하다. -> hash 자료구조 이용.
-	struct hash pages_map;
+	struct hash page_hash;
 	struct lock spt_lock;
 };
 

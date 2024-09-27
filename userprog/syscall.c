@@ -131,6 +131,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 struct thread *t = thread_current();
 t->tf.rsp = f->rsp;
 #endif
+
 #ifdef USERPROG /* syscall, project 2 */
 
 	syscall_handler_func *handler;
@@ -410,7 +411,8 @@ static bool
 is_vaddr_valid(void* vaddr)
 {
 	return !(is_kernel_vaddr(vaddr) 
-		|| pml4_get_page(thread_current()->pml4, vaddr) == NULL 
+		//|| pml4_get_page(thread_current()->pml4, vaddr) == NULL 
+		|| spt_find_page(&thread_current()->spt, vaddr) == NULL
 		|| vaddr == NULL);
 }
 
