@@ -10,9 +10,14 @@
 
 #include "vm/vm.h"
 #include "vm/uninit.h"
+/* project 3*/
+#include <string.h>
+#include "userprog/process.h"
 
 static bool uninit_initialize (struct page *page, void *kva);
 static void uninit_destroy (struct page *page);
+static bool
+uninit_duplicate(struct page* dst, const struct page* src);
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations uninit_ops = {
@@ -73,8 +78,25 @@ uninit_destroy (struct page *page) {
 		free(aux);
 }
 
-static struct page*
-uninit_duplicate(struct page * page){
-	struct uninit_page *uninit UNUSED = &page->uninit;
+static bool
+uninit_duplicate(struct page* dst, const struct page* src){
+	struct uninit_page *uninit;
+	struct load_args* aux;
 
+	ASSERT( dst != NULL && src != NULL);
+
+	uninit = NULL;
+	aux = NULL;
+
+	memcpy(dst, src, sizeof(struct page));
+	uninit = &dst->uninit;
+	if((aux = malloc(sizeof(struct load_args))) == NULL)
+		goto err;
+	memcpy(aux, uninit->aux, sizeof(struct load_args));
+	uninit->aux = aux;
+	return true;
+err:
+	if(aux)
+		free(aux);
+	return false;
 }

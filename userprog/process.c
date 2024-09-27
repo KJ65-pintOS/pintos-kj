@@ -909,6 +909,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	page_read_bytes = args->page_read_bytes;
 	page_zero_bytes = args->page_zero_bytes;
 	ofs = args->ofs;
+	//struct thread* t = thread_current();
 	free(aux);
 
 	file_seek(file,ofs);

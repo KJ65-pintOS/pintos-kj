@@ -20,6 +20,7 @@ void process_activate (struct thread *next);
 #include <list.h>
 #include <string.h>
 #include "threads/synch.h"
+#include "userprog/process.h"
 
 #define FD_MAX_SIZE 512
 #define FD_MIN_SIZE 0
@@ -63,13 +64,13 @@ struct process {
 /*********************************************/
 /* vm, project 3 */
 
+/* TODO: load_args vm으로 이동 필요 */
 struct load_args{
     struct file* file;
 	size_t page_read_bytes;
 	size_t page_zero_bytes;
     off_t ofs;
 };
-
 /* vm, project 3 */
 
 

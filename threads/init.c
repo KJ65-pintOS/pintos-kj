@@ -24,7 +24,6 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/exception.h"
-#include "userprog/gdt.h"
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
 #endif

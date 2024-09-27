@@ -22,6 +22,7 @@ vm_dealloca_frame(struct frame *frame);
 static void 
 page_duplicate(struct hash_elem *e, void *aux);
 
+
 /*************************************************/
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -56,6 +57,10 @@ page_get_type (struct page *page) {
 static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
+
+const static struct frame_operations frame_operation = { 
+	.do_claim = vm_do_claim_page,
+};
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -99,6 +104,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		 * TODO: should modify the field after calling the uninit_new. */
 		uninit_new(page,upage,init,type,aux,initializer);
 		page->writable = writable;
+		page->f_operations = &frame_operation;
 
 		/* TODO: Insert the page into the spt. */
 		if(!spt_insert_page(spt,page))
@@ -378,32 +384,11 @@ page_duplicate(struct hash_elem *e, void *aux){
 
 	if((page  = malloc(sizeof(struct page))) == NULL)
 		goto err;
-
-	memcpy(page,src_page,sizeof(struct page)); 
-	page_type = page->operations->type;
-	
-	switch (page_type){
-		case VM_FILE:
-		case VM_ANON:
-			page->frame = NULL;
-			if(!vm_do_claim_page(page)){
-				ASSERT(false);
-			}
-			memcpy(page->frame->kva, src_page->frame->kva,PGSIZE); 
-			break;
-		case VM_UNINIT:
-
-		default:
-			goto err;
-	}
-	if(page_type == VM_UNINIT){
-		struct uninit_page *uninit = &page->uninit;
-		struct load_args* aux = malloc(sizeof(struct load_args));
-		memcpy(aux, uninit->aux, sizeof(struct load_args));
-		uninit->aux = aux;
-	}
+	if(!duplicate(page,src_page))
+		goto err;
 	if(!spt_insert_page(spt,page))
 		goto err;
+	return ;
 err:
 	if(page)
 		destroy(page);

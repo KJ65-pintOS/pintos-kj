@@ -2,18 +2,22 @@
 
 #include "vm/vm.h"
 #include "devices/disk.h"
+#include <string.h>
+#include "vm/vm.h"
 
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
 static bool anon_swap_in (struct page *page, void *kva);
 static bool anon_swap_out (struct page *page);
 static void anon_destroy (struct page *page);
+static bool anon_duplicate(struct page* dst, const struct page* src);
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations anon_ops = {
 	.swap_in = anon_swap_in,
 	.swap_out = anon_swap_out,
 	.destroy = anon_destroy,
+	.duplicate = anon_duplicate,
 	.type = VM_ANON,
 };
 
@@ -53,7 +57,14 @@ anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
 	struct frame* f;
 }
-static struct page* 
-anon_duplicate(struct page * page){
-
+static bool
+anon_duplicate(struct page* dst, const struct page* src){
+	memcpy(dst,src,sizeof(struct page));
+	dst->frame = NULL;
+	// if(!vm_do_claim_page(dst)){
+	// 	ASSERT(false);
+	// }
+	do_claim(dst);
+	memcpy(dst->frame->kva, src->frame->kva,PGSIZE); 
+	return true;
 }
