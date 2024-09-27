@@ -223,11 +223,23 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
-	ASSERT(is_user_vaddr(addr));
-	page = spt_find_page(spt,addr);
-	if(page==NULL) {
-	return vm_do_claim_page (page);
-	}
+	if (addr == NULL)
+        return false;
+
+    if (is_kernel_vaddr(addr))
+        return false;
+
+    if (not_present) // 접근한 메모리의 physical page가 존재하지 않은 경우
+    {
+        /* TODO: Validate the fault */
+        page = spt_find_page(spt, addr);
+        if (page == NULL)
+            return false;
+        if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write 요청한 경우
+            return false;
+        return vm_do_claim_page(page);
+    }
+    return false;
 
 	// 스택 포인터 아래 8바이트에 대해서 PAGE FAULT를 발생시킬 수 있다.
 	// intr_frame rsp에서 얻을 수 잇다.
