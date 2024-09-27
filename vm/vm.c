@@ -144,7 +144,7 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 
 	// return succ; //true 
 
-	return hash_insert(spt, &page->hash_elem) == NULL ? true : false;
+	return hash_insert(&spt->hash_spt, &page->hash_elem) == NULL ? true : false;
 	/*********************************/
 }
 
@@ -281,8 +281,8 @@ vm_do_claim_page (struct page *page) {
 
 	/*********************************/
 	/*project 3*/
-	uint64_t *cur_thread_page_table= thread_current()->pml4;
-	pml4_set_page(cur_thread_page_table,page,frame,page->writable);
+	struct thread *curr_thread= thread_current();
+	pml4_set_page(curr_thread->pml4,page->va,frame->kva,page->writable);
 	/*********************************/
 
 	return swap_in (page, frame->kva);

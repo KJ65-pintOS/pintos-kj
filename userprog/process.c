@@ -913,7 +913,7 @@ lazy_load_segment (struct page *page, struct aux_info *aux) {
 		palloc_free_page(page->frame->kva);
 		return false;
 	}
-	memset((void *)page->frame->kva,0,page_zero_bytes);
+	memset((void *)page->frame->kva+page_read_bytes,0,page_zero_bytes);
 
 	return true;
 }
