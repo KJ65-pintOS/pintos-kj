@@ -116,7 +116,7 @@ struct frame_table {
 
 // project3 Anonymous page - struct for lazy_load_segment
 
-struct lazy_load_info
+struct load_info
 {
 	struct file *file; // 파일 포인터
 	off_t offset;	   // 파일 오프셋

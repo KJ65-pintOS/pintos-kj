@@ -6,6 +6,8 @@
 #include "kernel/hash.h"
 #include "threads/mmu.h"
 #include "threads/synch.h"
+#include "lib/string.h"
+#include "include/userprog/process.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -13,6 +15,7 @@
 /* project3: 추가*/
 unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
 bool page_less (const struct hash_elem *a_,const struct hash_elem *b_, void *aux UNUSED);
+void page_destructor (struct hash_elem *p_, void *aux UNUSED);
 
 void
 vm_init (void) {
@@ -102,7 +105,7 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 /* 찾는 va와 일치하는 page 찾기 */
 struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+spt_find_page (struct supplemental_page_table *spt, void *va) {
 	struct page *page = NULL;
 	/* TODO: Fill this function. */
 	page = (struct page*)malloc(sizeof(struct page));
@@ -118,8 +121,8 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
+spt_insert_page (struct supplemental_page_table *spt,
+		struct page *page) {
 	int succ = false;
 	/* TODO: Fill this function. */
 	// 페이지가 spt에 이미 있는지 확인
@@ -193,9 +196,9 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* Return true on success */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+vm_try_handle_fault (struct intr_frame *f, void *addr,
+		bool user, bool write , bool not_present) {
+	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	// 스택 확장해야하는지 확인 추가필요
@@ -225,7 +228,7 @@ vm_dealloc_page (struct page *page) {
 /* Claim the page that allocate on VA. */
 // claim - 물리적 프레임, 페이지를 할당하는 것을 의미
 bool
-vm_claim_page (void *va UNUSED) {
+vm_claim_page (void *va) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
 
@@ -258,22 +261,72 @@ vm_do_claim_page (struct page *page) {
 초기화 성공 시 true를, 실패 시 false를 반환합니다. */
 // 새로운 보조 페이지 테이블을 초기화, 페이지 테이블은 해시 테이블로 관리
 void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_init (struct supplemental_page_table *spt) {
 	hash_init(&spt->pages, page_hash, page_less, NULL); // 해시테이블 초기화
 	lock_init(&spt->hash_lock); // lock 초기화
 }
 
+/*src부터 dst까지 supplemental page table를 복사하세요. 
+이것은 자식이 부모의 실행 context를 상속할 필요가 있을 때 사용됩니다.
+(예 - fork()). src의 supplemental page table를 반복하면서 
+dst의 supplemental page table의 엔트리의 정확한 복사본을 만드세요. 
+당신은 초기화되지않은(uninit) 페이지를 할당하고 그것들을 바로 요청할 필요가 있을 것입니다 */
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst,
+		struct supplemental_page_table *src) {
+	
+	// 해시테이블 내의 위치 반복자
+	struct hash_iterator i;
+	// 첫번째 요소로 초기화
+	hash_first (&i, &src->pages);
+	while (hash_next(&i)) {
+		struct page *origin_page = hash_entry(hash_cur (&i), struct page, hash_elem);
+		enum vm_type type = origin_page->operations->type; // 페이지 타입
+
+		// uninit은 alloc까지만 해두고 pagefault가 발생할때 claim되도록
+		if(type == VM_UNINIT) {
+			struct load_info *copied_aux = malloc(sizeof(struct load_info)); // load_info 넘겨주기
+			memcpy(copied_aux, origin_page->uninit.aux, sizeof(struct load_info)); // aux를 memcpy해서 free되는 것을 방지
+			if (!vm_alloc_page_with_initializer (origin_page->uninit.type, origin_page->va,
+					origin_page->writable, origin_page->uninit.init, copied_aux))
+				return false;
+
+			continue;
+		}
+
+		// anon, file은 claim까지 진행
+		if(!(vm_alloc_page(type, origin_page->va, origin_page->writable) &&
+							vm_claim_page(origin_page->va))) {
+			return false;
+		}
+
+		// copeid page에 origin page memcpy
+		struct page *copied_page = spt_find_page(dst, origin_page->va);
+		if(copied_page == NULL) {
+			return false;
+		}
+
+		// spt에 커널 물리 주소
+		memcpy(copied_page->frame->kva, origin_page->frame->kva, PGSIZE);
+	}
+	return true;
 }
 
+/* supplemental page table에 의해 유지되던 모든 자원들을 free합니다. 
+이 함수는 process가 exit할 때(userprog/process.c의 process_exit()) 호출됩니다.
+당신은 페이지 엔트리를 반복하면서 테이블의 페이지에 destroy(page)를 호출하여야 합니다.
+당신은 이 함수에서 실제 페이지 테이블(pml4)와 물리 주소(palloc된 메모리)에 대해 걱정할 필요가 없습니다. 
+supplemental page table이 정리되어지고 나서, 호출자가 그것들을 정리할 것입니다.*/
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	if(!hash_empty(&spt->pages)) {
+		hash_clear(&spt->pages, page_destructor);
+	}
+
 }
 
 /* project3: hash_init에 필요한 함수 추가 */
@@ -290,9 +343,10 @@ page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUS
 	return a->va < b->va;
 }
 
-void page_free (struct hash_elem *p_, void *aux UNUSED) {
-	const struct page *p = hash_entry (p_, struct page, hash_elem);
-	free(p);
+void page_destructor (struct hash_elem *p_, void *aux UNUSED) {
+	struct page *page = hash_entry (p_, struct page, hash_elem);
+	destroy(page);
+	free(page);
 }
 
 unsigned

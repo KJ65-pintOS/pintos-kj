@@ -895,7 +895,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
-	struct lazy_load_info *info = (struct load_info*)aux; 
+	struct load_info *info = (struct load_info*)aux; 
 
 	// file 오프셋 설정
 	file_seek(info->file, info->offset);
@@ -939,8 +939,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		struct lazy_load_info *aux = malloc(sizeof(struct lazy_load_info));
-		struct lazy_load_info lazy_load_info = {
+		struct load_info *aux = malloc(sizeof(struct load_info));
+		struct load_info load_info = {
 				.file = file,
 				.offset = ofs,
 				.page_read_bytes = page_read_bytes,
@@ -948,7 +948,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 				.writable = writable
 		};
 
-		memcpy(aux, &lazy_load_info, sizeof(struct lazy_load_info));
+		memcpy(aux, &load_info, sizeof(struct load_info));
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
 					writable, lazy_load_segment, aux))
 			return false;
@@ -966,13 +966,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (struct intr_frame *if_) {
 	bool success = false;
-	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
+	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE); // 스택 최상단 - 페이지 사이즈
 
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
 
+	// vm_alloc_page으로 anon페이지 할당하고 쓰기가능한 페이지로 설정
+	// vm_claim_page은 해당 페이지를 실제로 물리메로리에 매핑
 	success = vm_alloc_page(VM_ANON, stack_bottom, true) &&
 								vm_claim_page(stack_bottom);
 
