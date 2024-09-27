@@ -192,7 +192,7 @@ vm_get_frame (void) {
 		PANIC("todo");
 	}
 	//성공 시
-	frame = malloc(sizeof(frame));
+	frame = malloc(sizeof(struct frame));
 	frame->kva = kva;
 	frame->page = NULL;
 	/*********************************/
