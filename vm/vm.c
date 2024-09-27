@@ -247,10 +247,13 @@ vm_handle_wp (struct page *page UNUSED) {
 bool
 vm_try_handle_fault (struct intr_frame *f, void *addr,
 		bool user, bool write, bool not_present) {
+	if (is_kernel_vaddr(addr)) 
+		return false;
+	
 	struct thread *current = thread_current();
 	struct supplemental_page_table *spt = &current->spt;
 	struct page *page = spt_find_page(spt, addr);
-	/* TODO: Validate the fault. 기본 케이스부터 통과하고 생각하자
+	/* TODO: Validate the fault.
 		- 유저 프로세스가 접근하려던 주소에서 데이터를 얻을 수 없거나
 		- 페이지가 커널 가상 메모리 영역에 존재하거나, 
 		- 읽기 전용 페이지에 대해 쓰기를 시도하는 상황
@@ -260,7 +263,7 @@ vm_try_handle_fault (struct intr_frame *f, void *addr,
 		return true;
 	}
 	
-	if (page == NULL || is_kernel_vaddr(addr))
+	if (page == NULL || (write && !page->writable))
 		return false;
 
 	return vm_do_claim_page (page);
@@ -331,7 +334,7 @@ bool
 supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src) {
 	struct hash_iterator itr;
-	hash_first(&itr, src);
+	hash_first(&itr, &src->pages);
 	while (hash_next(&itr)) {
 		struct page *origin = hash_entry(hash_cur(&itr), struct page, hash_elem);
 		enum vm_type page_type = origin->operations->type;

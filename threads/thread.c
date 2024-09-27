@@ -930,10 +930,12 @@ mlfqs_set_priority(struct thread* t)
 
 /* advanced scheduling, project 1 */
 /*****************************************************************/
-/* user program, project 2 */
-#ifdef USERPROG
-
-
+/* user program, project 3 */
+#ifdef VM
+void thread_kill() {
+	thread_current()->exit_code = -1;
+	thread_exit();
+}
 #endif
-/* user program, project 2 */
+/* user program, project 3 */
 /*****************************************************************/

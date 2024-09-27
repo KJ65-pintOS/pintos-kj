@@ -39,8 +39,8 @@ static syscall_handler_func
 static struct file* 
 get_file_by_fd(int fd);
 
-static bool
-is_vaddr_valid(void* vaddr);
+bool is_vaddr_valid(void*);
+bool is_vaddr_valid_with_write(void*, bool);
 
 static void
 halt_handler(struct intr_frame *f);
@@ -70,7 +70,10 @@ static void
 tell_handler(struct intr_frame* f);
 static void
 close_handler(struct intr_frame* f);
-
+static void
+mmap_handler(struct intr_frame* f);
+static void
+munmap_handler(struct intr_frame* f);
 
 #endif
 /* syscall, project 2 */
@@ -121,6 +124,8 @@ syscall_init (void) {
 	syscall_handlers[SYS_SEEK] = seek_handler;
 	syscall_handlers[SYS_TELL] = tell_handler;
 	syscall_handlers[SYS_CLOSE] = close_handler;
+	syscall_handlers[SYS_MMAP] = mmap_handler;
+	syscall_handlers[SYS_MUNMAP] = munmap_handler;
 
 #endif /* syscall, project 2 */
 }
@@ -213,11 +218,9 @@ wait_handler(struct intr_frame* f)
 static void
 create_handler(struct intr_frame* f)
 {
-	char* file_name;
-	unsigned initial_size;
-	
-	file_name = (char*)f->R.rdi;
-	initial_size = (unsigned)f->R.rsi;
+	char* file_name = (char*)f->R.rdi;
+	unsigned initial_size = (unsigned)f->R.rsi;
+
 
 	if(!is_vaddr_valid(file_name) || *file_name == NULL){
 		thread_current()->exit_code = -1;
@@ -249,7 +252,7 @@ read_handler(struct intr_frame* f)
 	buffer = f->R.rsi;
 	size = f->R.rdx;
 
-	if(!is_vaddr_valid(buffer) ||  fd == STDOUT_FILENO){
+	if(!is_vaddr_valid_with_write(buffer, true) ||  fd == STDOUT_FILENO){
 		thread_current()->exit_code = -1;
 		thread_exit(); 
 		NOT_REACHED();
@@ -327,7 +330,7 @@ write_handler(struct intr_frame* f)
 		return;
 	}
 
-	if( !is_vaddr_valid(buffer) || fd == STDIN_FILENO) {
+	if( !is_vaddr_valid_with_write(buffer, true) || fd == STDIN_FILENO) {
 		thread_current()->exit_code = -1;
 		thread_exit();
 		NOT_REACHED();
@@ -404,12 +407,22 @@ get_file_by_fd(int fd)
 	return get_file(fd_table,fd);
 }
 
-static bool
-is_vaddr_valid(void* vaddr)
-{
-	return !(is_kernel_vaddr(vaddr) 
+bool is_vaddr_valid(void *vaddr) {
+		return !(is_kernel_vaddr(vaddr) 
 		|| spt_find_page(&thread_current()->spt, vaddr) == NULL
 		|| vaddr == NULL);
+}
+
+bool is_vaddr_valid_with_write(void* vaddr, bool write)
+{
+	if (vaddr == NULL || is_kernel_vaddr(vaddr))
+		return false;
+
+	struct page *page = spt_find_page(&thread_current()->spt, vaddr);
+
+	if (page == NULL || page->writable != write)
+		return false;
+	return true;
 }
 
 /***********************************************************/
@@ -444,4 +457,69 @@ put_user (uint8_t *udst, uint8_t byte) {
 }
 #endif
 /* userprogram, project 2 */
+/******************************************************/
+
+/******************************************************/
+/* vm, project 3 */
+/*
+	fd로 열린 파일의 오프셋(offset) 바이트부터 length 바이트 만큼을 프로세스의 가상주소공간의 주소 addr 에 매핑 합니다.
+	전체 파일은 addr에서 시작하는 연속 가상 페이지에 매핑됩니다. 
+	파일 길이(length)가 PGSIZE의 배수가 아닌 경우 -> 최종 매핑된 페이지의 일부 바이트가 파일 끝을 넘어 "stick out"됩니다. 
+		page_fault가 발생하면 이 바이트(stick out된)를 0으로 설정하고 페이지를 디스크에 다시 쓸 때 버립니다. 
+			성공하면 이 함수는 파일이 매핑된 가상 주소를 반환합니다. 
+			실패하면 파일을 매핑하는 데 유효한 주소가 아닌 NULL을 반환해야 합니다.
+
+	실패해야 하는 경우
+		- fd로 열린 파일의 길이가 0바이트인 경우
+		- addr이 page-aligned되지 않았거나
+		- 기존 매핑된 페이지 집합(실행가능 파일이 동작하는 동안 매핑된 스택 또는 페이지를 포함)과 겹치는 경우 
+		- addr == NULL || length == 0
+		- fd == (stdin || stdout)
+
+	메모리 매핑된 페이지도 익명 페이지처럼 lazy load로 할당되어야 합니다. 
+	vm_alloc_page_with_initializer 또는 vm_alloc_page를 사용하여 페이지 개체를 만들 수 있습니다.
+
+	둘 이상의 프로세스가 동일한 파일을 매핑하는 경우 일관된 데이터를 볼 필요가 없습니다. 
+	Unix는 두 매핑이 동일한 물리적 페이지를 공유하도록 합니다. 
+	그리고 mmap system call에는 클라이언트가 페이지를 share, private(즉, copy-on-write) 여부를 결정할 수 있도록 하는 인수도 있습니다.
+*/
+static void
+mmap_handler(struct intr_frame* f) {
+	void* addr = (void *)f->R.rdi;
+	size_t length = (size_t)f->R.rsi;
+	bool writable = (bool)f->R.rdx;
+	int fd = (int)f->R.r10;
+	off_t offset = (off_t)f->R.r8;
+	if (!is_valid_mmap(addr, length, writable, fd, offset)) {
+		f->R.rax = (void *)NULL;
+		return;
+	}
+
+	do_mmap(addr, length, writable, fd, offset);
+
+	f->R.rax = addr;
+}
+/*
+	지정된 주소 범위 addr에 대한 매핑을 해제합니다.
+	지정된 주소는 => 아직 매핑 해제되지 않은 동일한 프로세서의 mmap에 대한 이전 호출에서 반환된 가상 주소여야 합니다.
+
+	종료를 통하거나 다른 방법을 통해 프로세스가 exit되면 모든 매핑이 암시적으로 매핑 해제됩니다. 
+	암시적이든 명시적이든 매핑이 매핑 해제되면 프로세스에서 쓴 모든 페이지는 파일에 다시 기록되며 기록되지 않은 페이지는 기록되지 않아야 합니다. 
+	그런 다음 해당 페이지는 프로세스의 가상 페이지 목록에서 제거됩니다.
+
+	파일을 닫거나 제거해도 해당 매핑이 매핑 해제되지 않습니다. 
+	생성된 매핑은 Unix 규칙에 따라 munmap이 호출되거나 프로세스가 종료될 때까지 유효합니다. 
+	자세한 내용은  Removing an Open File를 참조하세요. 
+	각 매핑에 대해 파일에 대한 개별적이고 독립적인 참조를 얻으려면 file_reopen 함수를 사용해야 합니다.
+
+	둘 이상의 프로세스가 동일한 파일을 매핑하는 경우 일관된 데이터를 볼 필요가 없습니다. 
+	Unix는 두 매핑이 동일한 물리적 페이지를 공유하도록 합니다. 
+	그리고 mmap system call에는 클라이언트가 페이지를 share, private(즉, copy-on-write) 여부를 결정할 수 있도록 하는 인수도 있습니다.
+*/
+static void
+munmap_handler(struct intr_frame* f) {
+	void* addr = (void *)f->R.rdi;
+}
+
+/* vm, project 3 */
 /******************************************************/

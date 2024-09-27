@@ -264,3 +264,4 @@ typedef int ffloat;
 /***************************************************/
 
 #endif /* threads/thread.h */
+void thread_kill();

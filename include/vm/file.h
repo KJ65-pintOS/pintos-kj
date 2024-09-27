@@ -7,10 +7,12 @@ struct page;
 enum vm_type;
 
 struct file_page {
+	size_t data_size;
 };
 
 void vm_file_init (void);
 bool file_backed_initializer (struct page *page, enum vm_type type, void *kva);
+bool is_valid_mmap(void *addr, size_t length, bool writable, int fd, off_t offset);
 void *do_mmap(void *addr, size_t length, int writable,
 		struct file *file, off_t offset);
 void do_munmap (void *va);
