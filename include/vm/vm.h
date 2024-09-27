@@ -88,6 +88,7 @@ struct page_operations {
 	bool (*swap_in) (struct page *, void *);
 	bool (*swap_out) (struct page *);
 	void (*destroy) (struct page *);
+	struct page* (*duplicate) (struct page *);
 	enum vm_type type;
 };
 

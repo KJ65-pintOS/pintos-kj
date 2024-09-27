@@ -185,7 +185,6 @@ exec_handler(struct intr_frame* f)
 	fn_copy = NULL;
 	file_name = (char*)f->R.rdi;
 
-
 	if(!(is_vaddr_valid(file_name) && *file_name != NULL))
 		goto err;
 	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL)
@@ -195,8 +194,8 @@ exec_handler(struct intr_frame* f)
 
 	/* exec에 실패할 경우에만 return value가 존재함. */
 	f->R.rax = process_exec(fn_copy);
-
 	thread_exit_by_error(-1);
+	NOT_REACHED();
 err:
 	if(fn_copy)
 		free(fn_copy);

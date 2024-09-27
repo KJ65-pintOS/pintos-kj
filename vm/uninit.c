@@ -19,6 +19,7 @@ static const struct page_operations uninit_ops = {
 	.swap_in = uninit_initialize,
 	.swap_out = NULL,
 	.destroy = uninit_destroy,
+	.duplicate = uninit_duplicate,
 	.type = VM_UNINIT,
 };
 
@@ -63,6 +64,17 @@ uninit_initialize (struct page *page, void *kva) {
 static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;
+	void* aux;
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
+	
+	aux = uninit->aux;
+	if(aux)
+		free(aux);
+}
+
+static struct page*
+uninit_duplicate(struct page * page){
+	struct uninit_page *uninit UNUSED = &page->uninit;
+
 }

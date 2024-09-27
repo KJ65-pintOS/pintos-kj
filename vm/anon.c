@@ -51,5 +51,9 @@ anon_swap_out (struct page *page) {
 static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
-	vm_dealloc_page(page);
+	struct frame* f;
+}
+static struct page* 
+anon_duplicate(struct page * page){
+
 }

@@ -17,7 +17,7 @@ static struct page *
 page_lookup (struct hash* hash, const void *va);
 
 static void
-vm_free_frame(struct frame *frame);
+vm_dealloca_frame(struct frame *frame);
 
 static void 
 page_duplicate(struct hash_elem *e, void *aux);
@@ -149,6 +149,7 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 			/* hash_delete 실패한 경우 */
 		}
 		lock_release(&spt->lock);
+		
 		vm_dealloc_page (page);
 	}
 }
@@ -200,7 +201,7 @@ vm_get_frame (void) {
 	return frame;
 }
 static void
-vm_free_frame(struct frame *frame){
+vm_dealloca_frame(struct frame *frame){
 	ASSERT(frame != NULL);
 	
 	free(frame->kva);
@@ -301,7 +302,7 @@ vm_do_claim_page (struct page *page) {
 	return true;
 err:
 	if(frame)
-		vm_free_frame(frame);
+		vm_dealloca_frame(frame);
 	return false;
 }
 
@@ -371,15 +372,16 @@ page_duplicate(struct hash_elem *e, void *aux){
 
 	ASSERT( aux != NULL);
 
+	page = NULL;
 	spt = (struct supplemental_page_table*)aux;
 	src_page = hash_entry(e, struct page, hash_elem);
 
-	if((page  = malloc(sizeof(struct page))) == NULL){
-		/* malloc 실패한 경우 */
-		ASSERT(page);
-	}
+	if((page  = malloc(sizeof(struct page))) == NULL)
+		goto err;
+
 	memcpy(page,src_page,sizeof(struct page)); 
 	page_type = page->operations->type;
+	
 	switch (page_type){
 		case VM_FILE:
 		case VM_ANON:
@@ -391,7 +393,8 @@ page_duplicate(struct hash_elem *e, void *aux){
 			break;
 		case VM_UNINIT:
 
-		break;
+		default:
+			goto err;
 	}
 	if(page_type == VM_UNINIT){
 		struct uninit_page *uninit = &page->uninit;
@@ -399,7 +402,11 @@ page_duplicate(struct hash_elem *e, void *aux){
 		memcpy(aux, uninit->aux, sizeof(struct load_args));
 		uninit->aux = aux;
 	}
-	spt_insert_page(spt,page);
+	if(!spt_insert_page(spt,page))
+		goto err;
+err:
+	if(page)
+		destroy(page);
 }
 
 /***********************************************************************/

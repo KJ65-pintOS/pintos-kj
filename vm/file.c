@@ -11,6 +11,7 @@ static const struct page_operations file_ops = {
 	.swap_in = file_backed_swap_in,
 	.swap_out = file_backed_swap_out,
 	.destroy = file_backed_destroy,
+	.duplicate = file_duplicate,
 	.type = VM_FILE,
 };
 
@@ -55,4 +56,9 @@ do_mmap (void *addr, size_t length, int writable,
 /* Do the munmap */
 void
 do_munmap (void *addr) {
+}
+
+static struct page*
+file_duplicate(struct page* page){
+
 }
