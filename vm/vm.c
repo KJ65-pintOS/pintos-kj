@@ -238,13 +238,15 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
-	// 스택 확장 해야하는지 확인
-	if(!addr) {
+
+	if(!addr || !is_user_vaddr(addr)) {
 		return false;
 	}
-	if(!is_user_vaddr(addr)) {
-		return false;
-	}
+
+	// Stack Growth
+	// 1. 현재 스택 포인터의 값 확인 - intr_frame의 rsp를 확인 / 또 다른 방법을 이용
+	// 2. 스택 증가를 확인하면 vm_stack_growth(addr) 호출
+
 	if(not_present) {
 		page = spt_find_page(spt, addr);
 		if(!page) {
@@ -322,8 +324,35 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 /* Copy supplemental page table from src to dst */
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
-	
+		struct supplemental_page_table *src UNUSED) {	
+	// src의 엔트리 순회
+	struct hash_iterator i;
+	hash_first(&i, &src->pages_map);
+	while(hash_next(&i)) {
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+		
+		enum vm_type type = src_page->operations->type;
+		void *upage = src_page->va;
+		bool writable = src_page->writable;
+		vm_initializer *init = src_page->uninit.init;
+		void *aux = src_page->uninit.aux;
+
+		if(type == VM_UNINIT) {
+			if(!vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, aux)) {
+				return false;
+			}
+			continue;
+		}
+		if(!vm_alloc_page(type, upage, writable) || !vm_claim_page(upage)) {
+			return false;
+		}
+		struct page *dst_page = spt_find_page(dst, upage);
+
+		memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE); // 메모리 복사
+		
+		//hash_insert(&dst->pages_map, &dst_page->hash_elem);
+	}
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -331,5 +360,20 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-	
+	hash_clear(&spt->pages_map, hash_elem_destructor);
+}
+
+static void
+hash_elem_destructor(struct hash_elem *e, void *aux) {
+    struct page *page = hash_entry(e, struct page, hash_elem);
+    
+    
+    if(page->frame) {
+        list_remove(&page->frame->fram_elem); // 프레임 리스트에서 제거
+        free(page->frame); // 프레임 구조체 할당 해제
+    }
+    
+    destroy(page);
+    
+    free(page); // 페이지 구조체 할당 해제
 }

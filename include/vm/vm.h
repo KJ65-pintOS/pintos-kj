@@ -76,6 +76,7 @@ struct frame {
 };
 
 static struct list frame_table; // project 3 : frame table
+static struct lock frame_table_lock;
 
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
@@ -103,7 +104,7 @@ struct supplemental_page_table {
 
 	// 연속된 page 그룹이 필요하다. -> hash 자료구조 이용.
 	struct hash pages_map;
-	struct semaphore spt_sema;
+	struct lock spt_lock;
 };
 
 #include "threads/thread.h"
@@ -127,5 +128,7 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
+static void hash_elem_destructor(struct hash_elem *e, void *aux);
 
 #endif  /* VM_VM_H */
