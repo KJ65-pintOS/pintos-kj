@@ -71,7 +71,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* supplemental page table, project 3*/
 
 		//1.이 함수는 페이지 구조체를 할당하고
-		struct page *new_page = malloc(sizeof(struct page));
+		struct page *new_page = (struct page *)malloc(sizeof(struct page));
 
 		//2. type에 따라 초기화 함수 다르게 설정
 		bool (*initializer)(struct page *page, enum vm_type type, void *kva);
