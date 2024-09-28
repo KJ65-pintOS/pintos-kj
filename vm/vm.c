@@ -17,7 +17,7 @@ static struct page *
 page_lookup (struct hash* hash, const void *va);
 
 static void
-vm_dealloca_frame(struct frame *frame);
+vm_dealloc_frame(struct frame *frame);
 
 static void 
 page_duplicate(struct hash_elem *e, void *aux);
@@ -60,6 +60,7 @@ static struct frame *vm_evict_frame (void);
 
 const static struct frame_operations frame_operation = { 
 	.do_claim = vm_do_claim_page,
+	.dealloc_frame = vm_dealloc_frame,
 };
 
 /* Create the pending page object with initializer. If you want to create a
@@ -206,17 +207,26 @@ vm_get_frame (void) {
 
 	return frame;
 }
-static void
-vm_dealloca_frame(struct frame *frame){
-	ASSERT(frame != NULL);
-	
-	free(frame->kva);
-	free(frame);
-}
+
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	struct thread* t;
+	uint64_t* stack_bottom;
+	struct page *page;
+	struct pml4* pml4;
+
+	ASSERT(is_user_stack(addr));
+	
+	addr = pg_round_down(addr);
+	pml4 = &thread_current()->pml4;
+
+	if(!vm_alloc_page(VM_ANON,addr,true)){
+		/* exception*/
+	}
+	vm_claim_page(addr);
+	return;
 }
 
 /* Handle the fault on write_protected page */
@@ -232,6 +242,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt;
 	struct page *page;
 	bool succ;
+	void* rsp = (void*)f->rsp;
 
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
@@ -240,8 +251,15 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct thread* t = thread_current();
 	if((page = spt_find_page(spt,addr)) == NULL){
 		/* page가 없는경우, 이상동작, 종료 */
-		ASSERT(page != NULL);
-		return false;
+		if(is_kernel_vaddr(addr))
+			/* kernel에서 fault가 난 경우 */
+			return false;
+		if(f->rsp - 8 > addr )
+			/* 잘못된 접근 */
+			return false;
+		vm_stack_growth(addr);
+		/* stack */
+		return true;
 	}
 
 	if(vm_do_claim_page (page))
@@ -265,7 +283,6 @@ vm_claim_page (void *va UNUSED) {
 	struct supplemental_page_table *spt;
 	struct page *page;
 	bool succ;
-	
 	ASSERT( va != NULL);
 
 	va = pg_round_down(va);
@@ -308,7 +325,7 @@ vm_do_claim_page (struct page *page) {
 	return true;
 err:
 	if(frame)
-		vm_dealloca_frame(frame);
+		vm_dealloc_frame(frame);
 	return false;
 }
 
@@ -343,7 +360,6 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 	hash_clear(&spt->page_hash,NULL);
-	//hash_destroy(&spt->page_hash, NULL);
 }
 
 /***********************************************************************/
@@ -374,7 +390,6 @@ page_duplicate(struct hash_elem *e, void *aux){
 	struct supplemental_page_table* spt;
 	const struct page *src_page;
 	struct page* page;
-	enum vm_type page_type;
 
 	ASSERT( aux != NULL);
 
@@ -391,7 +406,15 @@ page_duplicate(struct hash_elem *e, void *aux){
 	return ;
 err:
 	if(page)
-		destroy(page);
+		vm_dealloc_page(page);
+}
+
+static void
+vm_dealloc_frame(struct frame *frame){
+	ASSERT(frame != NULL);
+	
+	free(frame->kva);
+	free(frame);
 }
 
 /***********************************************************************/

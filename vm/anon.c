@@ -55,15 +55,14 @@ anon_swap_out (struct page *page) {
 static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
-	struct frame* f;
+	if(page->frame)
+		dealloc_frame(page);	
 }
+
 static bool
 anon_duplicate(struct page* dst, const struct page* src){
 	memcpy(dst,src,sizeof(struct page));
 	dst->frame = NULL;
-	// if(!vm_do_claim_page(dst)){
-	// 	ASSERT(false);
-	// }
 	do_claim(dst);
 	memcpy(dst->frame->kva, src->frame->kva,PGSIZE); 
 	return true;

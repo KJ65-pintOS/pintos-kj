@@ -37,6 +37,10 @@
 /* User stack start */
 #define USER_STACK 0x47480000
 
+/* custom */
+#define USER_STACK_BOTTOM USER_STACK - 256 * PGSIZE
+#define is_user_stack(vaddr) (vaddr < USER_STACK && vaddr > USER_STACK_BOTTOM - 1)
+
 /* Returns true if VADDR is a user virtual address. */
 #define is_user_vaddr(vaddr) (!is_kernel_vaddr((vaddr)))
 

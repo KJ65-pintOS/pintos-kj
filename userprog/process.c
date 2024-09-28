@@ -991,8 +991,10 @@ setup_stack (struct intr_frame *if_) {
 	success = vm_alloc_page(VM_ANON,stack_bottom,true) 
 			&& vm_claim_page(stack_bottom);
 
-	if (success)
+	if (success){
 		if_->rsp = USER_STACK;
+		t->stack_bottom = stack_bottom;
+	}
 	return success;
 }
 #endif /* VM */

@@ -99,14 +99,19 @@ struct page_operations {
 
 struct frame_operations{
 	bool (*do_claim) (struct page *);
+	void (*dealloc_frame) (struct frame *);
 };
 
 #define swap_in(page, v) (page)->operations->swap_in ((page), v)
 #define swap_out(page) (page)->operations->swap_out (page)
 #define destroy(page) \
 	if ((page)->operations->destroy) (page)->operations->destroy (page)
+
+/* custom */
 #define duplicate(dst,src) (src)->operations->duplicate(dst,src)
 #define do_claim(page) (page)->f_operations->do_claim(page);
+#define dealloc_frame(page) (page)->f_operations->dealloc_frame(page->frame)
+
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
