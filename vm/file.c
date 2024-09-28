@@ -4,9 +4,14 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+#include <list.h>
+#include "threads/mmu.h"
+#include "threads/malloc.h"
+
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
+bool lazy_load_file(struct page *page, void *aux);
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
@@ -17,7 +22,7 @@ static const struct page_operations file_ops = {
 };
 
 /* The initializer of file vm 
-	파일 지원 페이지 하위 시스템을 초기화합니다. 이 기능에서는 파일 백업 페이지와 관련된 모든 것을 설정할 수 있습니다.
+	파일 지원 페이지 하위 시스템을 초기화합니다. 이 기능에서는 file_backed_page와 관련된 모든 것을 설정할 수 있습니다.
 */
 void
 vm_file_init (void) {
@@ -33,6 +38,11 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 	page->operations = &file_ops;
 
 	struct file_page *file_page = &page->file;
+	list_init(&file_page->mm_pages);
+	file_page->page = page;
+	file_page->load_args = NULL;
+
+	return true;
 }
 
 /* Swap in the page by read contents from the file. */
@@ -66,26 +76,107 @@ bool is_valid_mmap(void *addr, size_t length, bool writable, int fd, off_t offse
 
 	return page == NULL;
 }
-
 /* Do the mmap */
+/*
+	1. load_segment like
+		- file에 writable을 set한다
+		- file을 PGSIZE 단위로 읽는다
+			- 한번에 읽는 byte가 PGSIZE보다 작은 경우를 위한 page_zero_bytes를 설정한다
+			- offset을 갱신한다
+			- page_fault 시 메모리 매핑할 함수를 만든다 -> mmap_handle_fault
+			- 이 때 사용할 args를 set한다
+	2. lazy_load like 
+*/
 void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
+	size_t actual_len = file_length(file);
+	size_t read_bytes = length;
+	void *upage = addr;
 
-	struct file *reopened = file_reopen(file);
+	while (read_bytes > 0) {
+		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-	if (file_length(reopened) == NULL)
-		goto err;
-	if (writable)
-		file_allow_write(reopened);
+		struct load_args *aux = malloc(sizeof(struct load_args));
+		if (aux == NULL){
+			file_close(file);
+			return;
+		}
+		aux->file = file;
+		aux->ofs = offset;
+		aux->page_read_bytes = page_read_bytes;
+		aux->page_zero_bytes = page_zero_bytes;
+		aux->writable = writable;
 
-err:
-	file_close(reopened);
-	thread_kill();
+		if (!vm_alloc_page_with_initializer(VM_FILE, upage, writable, lazy_load_file, aux)) {
+			file_close(file);
+			return;
+		}
+		
+
+		/* Advance */
+		read_bytes -= page_read_bytes;
+		upage += PGSIZE;
+		offset += page_read_bytes;
+	}
+	return;
+}
+
+bool lazy_load_file(struct page *page, void *aux) {
+	struct load_args *load_args = (struct load_args*)aux;
+	uint8_t *kpage = (uint8_t *)page->frame->kva;
+
+	page->file.load_args = load_args;
+
+	file_seek(load_args->file, load_args->ofs);
+
+	size_t page_read_bytes = load_args->page_read_bytes;
+	if (file_read(load_args->file, kpage, page_read_bytes) != (int)page_read_bytes) {
+		palloc_free_page(kpage);
+		free(aux);
+		return false;
+	}
+
+	memset(kpage + page_read_bytes, 0, load_args->page_zero_bytes);
+
+	list_push_back(&page->file.mm_pages, &page->file.elem);
+
+	return true;
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
 	// any change in the content is reflected in the file
+	/*
+		- file_page의 mm_pages를 순회한다.
+		- if dirty bit이 set 되어 있으면 file_write를 한다
+			- dirty bit check은 첫 addr만 확인하면 된다
+			- file에 대한 정보도 첫 addr만 있으면 된다
+			- page_read_bytes & offset은 file_page 별로 있어야 함
+			- 위 정보들은 lazy_load_file에서 넣어준다
+		- 아니면 똑같이 memcpy을 해주면 안되나?.
+		- frame & page를 free 한다
+		pml4에서도 삭제한다
+		file을 close한다
+		로직을 구체적으로 짜야겠다... 계속 수정이 일어나네
+	*/
+	struct page *start_file_page = spt_find_page(&thread_current()->spt, addr);
+	if (start_file_page == NULL)
+		return;
+	bool is_dirty = pml4_is_dirty(thread_current()->pml4, start_file_page->va);
+	struct list *mm_pages = &start_file_page->file.mm_pages;
+	struct list_elem *e;
+	for (e = list_begin(mm_pages); e != list_end(mm_pages); e = list_next(e)) {
+		
+		struct file_page *fpage = list_entry(e, struct file_page, elem);
+		if (is_dirty) {
+
+		}
+		
+	}
+
+	file_close(start_file_page->file.load_args->file);
+
 }

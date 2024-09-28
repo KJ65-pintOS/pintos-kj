@@ -494,8 +494,19 @@ mmap_handler(struct intr_frame* f) {
 		f->R.rax = (void *)NULL;
 		return;
 	}
+	
+	struct file *file =get_file_by_fd(fd);
+	size_t actual_length = file_length(file);
+	length = length > actual_length ? actual_length : length;
+	if (actual_length == NULL)
+		thread_kill();
+	
+	struct file *reopened = file_reopen(file);
+		
+	if (writable) 
+		file_allow_write(reopened);
 
-	do_mmap(addr, length, writable, fd, offset);
+	do_mmap(addr, length, writable, reopened, offset);
 
 	f->R.rax = addr;
 }

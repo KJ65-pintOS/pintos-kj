@@ -151,8 +151,7 @@ page_fault (struct intr_frame *f) {
 	/* Count page faults. */
 	page_fault_cnt++;
 	if(user){
-		thread_current()->exit_code = -1;
-		thread_exit();
+		thread_kill();
 	}
 	struct thread* t = thread_current();
 	/* If the fault is true fault, show info and exit. */
