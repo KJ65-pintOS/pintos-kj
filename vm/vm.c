@@ -328,9 +328,13 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_clear(&spt->hash_spt,page_destroy);
+
 }
 
 /*********************************/
+
+
 /* supplemental page table, project 3*/
 
 /* Returns a hash value for page p. */
@@ -348,6 +352,12 @@ page_less (const struct hash_elem *a_,
   const struct page *b = hash_entry (b_, struct page, hash_elem);
 
   return a->va < b->va;
+}
+
+
+void page_destroy(struct hash_elem *e, void *aux) {
+	struct page *page = hash_entry(e, struct page, hash_elem);
+	vm_dealloc_page(page);
 }
 
 /*********************************/
