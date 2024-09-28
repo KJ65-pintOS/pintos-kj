@@ -174,6 +174,7 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
 }
 
 /* Handle the fault on write_protected page */
@@ -183,34 +184,44 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* Return true on success */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
-	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
-	if (addr == NULL)
-	{
-		return false;
-	}
-	if (!is_user_vaddr(addr))
-	{
-		return false;
-	}
-	if (not_present)
-	{
-		page = spt_find_page(spt, addr);
-		if (page == NULL)
-		{
-			return false;
-		}
-		if (write == 1 && page->writable == 0)
-		{
-			return false;
-		}
-	return vm_do_claim_page (page);
-	}
-	return false;
+vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
+                    bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+    struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+    struct page *page = NULL;
+
+    // 유효한 주소인지 확인
+    if (addr == NULL || !is_user_vaddr(addr)) {
+        return false;
+    }
+
+    // 페이지가 존재하지 않을 때 처리
+    if (not_present) {
+        // 유저 모드의 스택 포인터 저장
+        void *rsp = user ? f->rsp : (is_user_vaddr(f->rsp) ? f->rsp : thread_current()->rsp);
+
+        // 스택 성장 조건 확인
+        if (addr >= USER_STACK - (1 << 20) && addr <= USER_STACK) {
+            if (addr >= rsp || addr == rsp - 8) {
+                vm_stack_growth(addr);
+            }
+        }
+
+        // 해당 주소의 페이지 찾기
+        page = spt_find_page(spt, addr);
+        if (page == NULL) {
+            return false;
+        }
+		// 쓰기 권한 확인
+        if (write && !page->writable) {
+            exit(-1);
+        }
+
+
+        // 페이지를 클레임
+        return vm_do_claim_page(page);
+    }
+
+    return false;
 }
 
 /* Free the page.
@@ -286,8 +297,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		if (type == VM_UNINIT)
 		{
 			vm_initializer *init = src_page->uninit.init;
-			void *aux = src_page->uninit.aux;
-			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, aux);
+			struct lazy_load_info *copy_aux = malloc(sizeof(struct lazy_load_info));
+			memcpy(copy_aux, src_page->uninit.aux, sizeof(struct lazy_load_info));
+			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, copy_aux);
 			continue;
 		}
 		if (!vm_alloc_page(type, upage, writable))

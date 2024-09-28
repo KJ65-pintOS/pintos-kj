@@ -132,7 +132,6 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 	syscall_handler_func *handler;
 	int sys_num;
-	
 	sys_num = f->R.rax;
 	handler = syscall_handlers[sys_num];
 	if(handler == NULL)
@@ -140,6 +139,9 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	handler(f);
 
 #endif /* syscall, project 2 */
+#ifdef VM
+	thread_current()->rsp = f->rsp;
+#endif
 }
 
 
@@ -319,17 +321,17 @@ write_handler(struct intr_frame* f)
 	fd = f->R.rdi;
 	buffer = f->R.rsi;
 	size = f->R.rdx;
-	
-	/* 표준 출력에 작성 */
-	if(fd == STDOUT_FILENO)	{
-		putbuf(buffer,size);
-		return;
-	}
 
 	if( !is_vaddr_valid(buffer) || fd == STDIN_FILENO) {
 		thread_current()->exit_code = -1;
 		thread_exit();
 		NOT_REACHED();
+	}
+	
+	/* 표준 출력에 작성 */
+	if(fd == STDOUT_FILENO)	{
+		putbuf(buffer,size);
+		return;
 	}
 
 	if((file = get_file_by_fd(fd)) == NULL){
