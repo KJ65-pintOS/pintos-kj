@@ -5,6 +5,7 @@
 #include <hash.h>
 #include "threads/synch.h"
 
+
 enum vm_type {
 	/* page not initialized */
 	VM_UNINIT = 0,
@@ -26,13 +27,22 @@ enum vm_type {
 	VM_MARKER_END = (1 << 31),
 };
 
+/* Representation of current process's memory space.
+ * We don't want to force you to obey any specific design for this struct.
+ * All designs up to you for this. */
+struct supplemental_page_table {
+	struct hash pages;
+	struct lock hash_lock; // hash table을 수정하는 함수(insert, delete etc)는 사용할 때 동시성을 조율해야 함
+};
+
 #include "vm/uninit.h"
+#include "devices/disk.h"
 #include "vm/anon.h"
 #include "vm/file.h"
+#include "userprog/process.h"
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
-
 struct page_operations;
 struct thread;
 
@@ -98,13 +108,7 @@ struct page_operations {
 #define destroy(page) \
 	if ((page)->operations->destroy) (page)->operations->destroy (page)
 
-/* Representation of current process's memory space.
- * We don't want to force you to obey any specific design for this struct.
- * All designs up to you for this. */
-struct supplemental_page_table {
-	struct hash pages;
-	struct lock hash_lock; // hash table을 수정하는 함수(insert, delete etc)는 사용할 때 동시성을 조율해야 함
-};
+
 
 struct frame_table {
 	struct hash frames;
@@ -131,6 +135,7 @@ bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
 bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 		bool writable, vm_initializer *init, void *aux);
 void vm_dealloc_page (struct page *page);
+void vm_dealloc_frame(struct frame *);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 #endif  /* VM_VM_H */

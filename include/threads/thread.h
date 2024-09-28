@@ -5,6 +5,9 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+/* Thread identifier type.
+   You can redefine this to whatever type you like. */
+typedef int tid_t;
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -20,9 +23,6 @@ enum thread_status {
 	THREAD_DYING        /* About to be destroyed. */
 };
 
-/* Thread identifier type.
-   You can redefine this to whatever type you like. */
-typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -264,4 +264,4 @@ typedef int ffloat;
 /***************************************************/
 
 #endif /* threads/thread.h */
-void thread_kill();
+void thread_kill(void);

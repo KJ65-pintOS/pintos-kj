@@ -1,10 +1,13 @@
 #ifndef VM_ANON_H
 #define VM_ANON_H
 #include "vm/vm.h"
+
 struct page;
 enum vm_type;
 
 struct anon_page {
+    disk_sector_t disk_sector;
+    bool is_in_disk;
 };
 
 void vm_anon_init (void);
