@@ -78,8 +78,7 @@ process_init (void) {
 	if((fd_table = palloc_get_page(0)) == NULL){
 		/* fd_table 생성 실패시에 부모가 알수있게 값을 변경하고 자신은 종료됨. */
 		notice_to_parent(current->process,PROCESS_FAILED);
-		thread_current()->exit_code = -1;
-		thread_exit();
+		thread_exit_by_error(-1);
 	}
 	init_fd(fd_table);
 	current->fd_table = fd_table;
@@ -281,7 +280,7 @@ error:
 }
 static void notice_to_parent(struct process * process, int status){
 	lock_acquire(&process->lock);
-	process->status = 1;
+	process->status = status;
 	lock_release(&process->lock);
 	sema_up(&process->sema);
 }
@@ -571,8 +570,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	
 	if( ( fd = find_empty_fd(table)) == FD_ERROR )
 	{
-		thread_current()->exit_code = -1;
-		thread_exit();
+		thread_exit_by_error(-1);
 	}
 	set_fd( table ,fd , file);
 
@@ -965,7 +963,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		/**********************************************************************/
 		
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, (vm_initializer *)lazy_load_segment, aux_info))
+					writable,lazy_load_segment, aux_info))
 			return false;
 
 		/* Advance. */

@@ -9,6 +9,7 @@
 #include "hash.h"
 #include "threads/vaddr.h"
 #include "threads/mmu.h"
+#include "lib/string.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -150,6 +151,8 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+	ASSERT(spt != NULL);
+	ASSERT(page != NULL);
 	vm_dealloc_page (page);
 	return true;
 }
@@ -310,9 +313,17 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
+	if (src == NULL) {
+		return false;
+	}
+	memcpy(dst, src, sizeof(src));
+
+	return true;	
 }
 
 /* Free the resource hold by the supplemental page table */
+
+//supplemental page table에 의해 유지되던 모든 자원들을 free합니다. 이 함수는 process가 exit할 때(userprog/process.c의 process_exit()) 호출됩니다. 당신은 페이지 엔트리를 반복하면서 테이블의 페이지에 destroy(page)를 호출하여야 합니다. 당신은 이 함수에서 실제 페이지 테이블(pml4)와 물리 주소(palloc된 메모리)에 대해 걱정할 필요가 없습니다. supplemental page table이 정리되어지고 나서, 호출자가 그것들을 정리할 것입니다.
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and

@@ -197,6 +197,11 @@ void thread_sleep(int64_t ticks);
 
 void thread_wakeup(int64_t ticks);
 
+/* project 3 */
+/***************************************************/
+void thread_exit_by_error(int exit_code);
+/***************************************************/
+
 /* alarm clock , project 1 */
 /***************************************************/
 /* priority scheduling , project 1*/
