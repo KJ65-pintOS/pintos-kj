@@ -186,7 +186,9 @@ vm_get_frame (void) {
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	// vm_marker_0은 비트연산을 통해서 타입에 영향을 주지않고 추가적인 정보를 담아줌
+	vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
 }
 
 /* Handle the fault on write_protected page */
@@ -200,21 +202,46 @@ vm_try_handle_fault (struct intr_frame *f, void *addr,
 		bool user, bool write , bool not_present) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
+
 	/* TODO: Validate the fault */
-	// 스택 확장해야하는지 확인 추가필요
-
-	page = spt_find_page(spt, addr);
-
-	struct thread *current = thread_current();
-	
-	if (page == NULL || is_kernel_vaddr(addr)) {
-		current->exit_code = -1;
-		thread_exit();
-		return false;
-	}
-
 	/* TODO: Your code goes here */
-	return vm_do_claim_page (page);
+	uintptr_t *rsp;
+
+	if (addr == NULL)
+        return false;
+
+    if (is_kernel_vaddr(addr))
+        return false;
+
+    if (not_present) // 접근한 메모리의 physical page가 존재하지 않은 경우
+    {
+        /* TODO: Validate the fault */
+        // 스택 확장해야하는지 확인
+        void *rsp = f->rsp; // user access인 경우, 유저 stack의 rsp 
+        if (!user)            // kernel access인 경우 thread에서 rsp를 가져와야 한다.
+            rsp = thread_current()->rsp;
+
+		// stack growth가 필요한지 확인 후 호출
+ 		// 스택 성장 조건 확인
+        if (addr >= USER_STACK - (1 << 20) && addr <= USER_STACK) {
+            if (addr >= rsp || addr == rsp - 8) {
+                vm_stack_growth(addr);
+            }
+        }
+
+		page = spt_find_page(spt, addr);
+
+		struct thread *current = thread_current();
+		
+		if (page == NULL || is_kernel_vaddr(addr)) {
+			current->exit_code = -1;
+			thread_exit();
+			return false;
+		}
+	
+		return vm_do_claim_page (page);
+	}
+	return false;
 }
 
 /* Free the page.

@@ -147,6 +147,7 @@ struct thread {
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
+	uintptr_t *rsp; // project3 stack growth - 유저 프로그램의 스택 포인터를 저장
 #endif
 
 	/* Owned by thread.c. */

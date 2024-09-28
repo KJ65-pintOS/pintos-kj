@@ -130,6 +130,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 #ifdef USERPROG /* syscall, project 2 */
 
+	thread_current()->rsp = f->rsp; // project 3 - user rsp 저장
+	
 	syscall_handler_func *handler;
 	int sys_num;
 	
