@@ -13,12 +13,14 @@
 
 static bool uninit_initialize (struct page *page, void *kva);
 static void uninit_destroy (struct page *page);
+static bool uninit_duplicate (struct page *dst, const struct page *scr);
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations uninit_ops = {
 	.swap_in = uninit_initialize,
 	.swap_out = NULL,
 	.destroy = uninit_destroy,
+	.duplicate = uninit_duplicate,
 	.type = VM_UNINIT,
 };
 
@@ -63,6 +65,33 @@ uninit_initialize (struct page *page, void *kva) {
 static void
 uninit_destroy (struct page *page) {
 	struct uninit_page *uninit UNUSED = &page->uninit;
+	void* aux;
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
+	aux = uninit->aux;
+	if(aux)
+		free(aux);
+}
+
+static bool
+uninit_duplicate(struct page* dst, const struct page* src){
+	struct uninit_page *uninit;
+	struct aux_info *aux;
+
+	ASSERT( dst != NULL && src != NULL);
+
+	uninit = NULL;
+	aux = NULL;
+
+	memcpy(dst, src, sizeof(struct page));
+	uninit = &dst->uninit;
+	if((aux = malloc(sizeof(struct aux_info))) == NULL)
+		goto err;
+	memcpy(aux, uninit->aux, sizeof(struct aux_info));
+	uninit->aux = aux;
+	return true;
+err:
+	if(aux)
+		free(aux);
+	return false;
 }

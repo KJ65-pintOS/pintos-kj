@@ -44,10 +44,15 @@ static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
+const static struct frame_operations frame_operation = { 
+	.do_claim = vm_do_claim_page
+};
+
 /*********************************/
 /* supplemental page table, project 3*/
 unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
 bool page_less (const struct hash_elem *a_,const struct hash_elem *b_, void *aux UNUSED);
+static void page_duplicate(struct hash_elem *e, void *aux);
 /*********************************/
 
 /* Create the pending page object with initializer. If you want to create a
@@ -60,6 +65,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 	ASSERT (VM_TYPE(type) != VM_UNINIT)
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
+	upage = pg_round_down(upage);
 
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
@@ -90,6 +96,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		// 초기화되지 않은 페이지 구조체를 설정
 		uninit_new(new_page,upage,init,type,aux,initializer);
 		new_page->writable = writable;
+		new_page->f_operations = &frame_operation;
 
 		//4. Insert the page into the spt.
 		return spt_insert_page(spt,new_page);
@@ -309,16 +316,19 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 	hash_init (&spt->hash_spt, page_hash, page_less, NULL);
 }
 
-/* Copy supplemental page table from src to dst */
-bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
-	if (src == NULL) {
-		return false;
-	}
-	memcpy(dst, src, sizeof(src));
+//src부터 dst까지 supplemental page table를 복사하세요. 이것은 자식이 부모의 실행 context를 상속할 필요가 있을 때 사용됩니다.(예 - fork()). src의 supplemental page table를 반복하면서 dst의 supplemental page table의 엔트리의 정확한 복사본을 만드세요. 당신은 초기화되지않은(uninit) 페이지를 할당하고 그것들을 바로 요청할 필요가 있을 것입니다.
 
-	return true;	
+/* Copy supplemental page table from src to dst */
+bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED,struct supplemental_page_table *src UNUSED) {
+
+	ASSERT(dst != NULL);
+	ASSERT(src != NULL);
+
+	src->hash_spt.aux = dst;
+	hash_apply(&src->hash_spt, page_duplicate);
+	src->hash_spt.aux = NULL;
+	return true;
+
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -359,5 +369,32 @@ void page_destroy(struct hash_elem *e, void *aux) {
 	struct page *page = hash_entry(e, struct page, hash_elem);
 	vm_dealloc_page(page);
 }
+
+/*********************************/
+/*project 3*/
+static void 
+page_duplicate(struct hash_elem *e, void *aux){
+	struct supplemental_page_table* spt;
+	const struct page *src_page;
+	struct page* page;
+
+	ASSERT( aux != NULL);
+
+	page = NULL;
+	spt = (struct supplemental_page_table*)aux;
+	src_page = hash_entry(e, struct page, hash_elem);
+
+	if((page  = malloc(sizeof(struct page))) == NULL)
+		goto err;
+	if(!duplicate(page,src_page))
+		goto err;
+	if(!spt_insert_page(spt,page))
+		goto err;
+	return ;
+err:
+	if(page)
+		vm_dealloc_page(page);
+}
+
 
 /*********************************/

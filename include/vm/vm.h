@@ -65,6 +65,7 @@ struct page {
 	/* supplemental page table, project 3*/
 	struct hash_elem hash_elem;
 	bool writable;
+	const struct frame_operations *f_operations;
 
 	/*********************************/
 
@@ -94,13 +95,27 @@ struct page_operations {
 	bool (*swap_in) (struct page *, void *);
 	bool (*swap_out) (struct page *);
 	void (*destroy) (struct page *);
+	bool (*duplicate) (struct page *, const struct page*);
 	enum vm_type type;
 };
+
+/*********************************/
+/* project 3*/
+struct frame_operations {
+	bool (*do_claim) (struct page *);
+};
+/*********************************/
 
 #define swap_in(page, v) (page)->operations->swap_in ((page), v)
 #define swap_out(page) (page)->operations->swap_out (page)
 #define destroy(page) \
 	if ((page)->operations->destroy) (page)->operations->destroy (page)
+
+/*********************************/
+/* project 3*/
+#define duplicate(dst, src) (src)->operations->duplicate(dst, src)
+#define do_claim(page) (page)->f_operations->do_claim(page)
+/*********************************/
 
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
@@ -134,7 +149,7 @@ enum vm_type page_get_type (struct page *page);
 /*********************************/
 /* project 3*/
 void page_destroy (struct hash_elem *e, void *aux);
+static void page_duplicate (struct hash_elem *e, void *aux);
 /*********************************/
 
 #endif  /* VM_VM_H */
-
