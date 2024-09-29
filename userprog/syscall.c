@@ -41,6 +41,9 @@ get_file_by_fd(int fd);
 static bool
 is_vaddr_valid(void* vaddr);
 
+static bool
+is_write_valid(void* vaddr);
+
 static void
 halt_handler(struct intr_frame *f);
 static void
@@ -185,14 +188,13 @@ exec_handler(struct intr_frame* f)
 	
 	file_name = (char*)f->R.rdi;
 	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
+		// thread.c 함수화
+		thread_exit_by_error(-1);
 	}
 
 	if(!is_vaddr_valid(file_name) || *file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
+		// thread.c 함수화
+		thread_exit_by_error(-1);
 	}
 	strlcpy(fn_copy, file_name, strlen(file_name) + 1);
 
@@ -221,9 +223,8 @@ create_handler(struct intr_frame* f)
 	initial_size = (unsigned)f->R.rsi;
 
 	if(!is_vaddr_valid(file_name) || *file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
+		// thread.c 함수화
+		thread_exit_by_error(-1);
 	}
 
 	f->R.rax = filesys_create(file_name, initial_size);
@@ -250,10 +251,9 @@ read_handler(struct intr_frame* f)
 	buffer = f->R.rsi;
 	size = f->R.rdx;
 
-	if(!is_vaddr_valid(buffer) ||  fd == STDOUT_FILENO){
-		thread_current()->exit_code = -1;
-		thread_exit(); 
-		NOT_REACHED();
+	if(!is_vaddr_valid(buffer) || !is_write_valid(buffer) || fd == STDOUT_FILENO){
+		// thread.c 함수화
+		thread_exit_by_error(-1);
 	}
 	struct thread* t = thread_current();
 	if((file = get_file_by_fd(fd))== NULL){
@@ -274,9 +274,8 @@ open_handler(struct intr_frame *f)
 	/* Open executable file. */
 	file_name = f->R.rdi;
 	if(!is_vaddr_valid(file_name) || file_name == NULL){
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
+		// thread.c 함수화
+		thread_exit_by_error(-1);
 	}
 
 	file = filesys_open (file_name);
@@ -317,23 +316,23 @@ write_handler(struct intr_frame* f)
 	int fd;
 	void* buffer;
 	unsigned size;
-	
+
 	fd = f->R.rdi;
 	buffer = f->R.rsi;
 	size = f->R.rdx;
-	
+
+
 	/* 표준 출력에 작성 */
 	if(fd == STDOUT_FILENO)	{
 		putbuf(buffer,size);
 		return;
 	}
 
-	if( !is_vaddr_valid(buffer) || fd == STDIN_FILENO) {
-		thread_current()->exit_code = -1;
-		thread_exit();
-		NOT_REACHED();
+	if(!is_vaddr_valid(buffer) || !is_write_valid(buffer) || fd == STDIN_FILENO) {
+		// thread.c 함수화
+		thread_exit_by_error(-1);
 	}
-
+	
 	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
 		return;
@@ -383,8 +382,8 @@ close_handler(struct intr_frame* f)
 	fd = (int)f->R.rdi;
 
 	if((file = get_file_by_fd(fd)) == NULL){
-		current->exit_code = -1;
-		thread_exit();
+		// thread.c 함수화
+		thread_exit_by_error(-1);
 	}
 	free_fd(get_fd_table(current),fd);
 	file_close(file);
@@ -414,6 +413,12 @@ is_vaddr_valid(void* vaddr)
 		|| vaddr == NULL);
 }
 
+static bool
+is_write_valid(void* vaddr)
+{
+    struct page *page = spt_find_page(&thread_current()->spt, vaddr);
+    return page != NULL && page->writable;
+}
 /***********************************************************/
 
 /* Reads a byte at user virtual address UADDR.

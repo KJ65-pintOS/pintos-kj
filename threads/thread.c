@@ -927,6 +927,13 @@ mlfqs_set_priority(struct thread* t)
 		t->priority = PRI_MAX;
 }
 
+void
+thread_exit_by_error(int error_code) {
+	thread_current()->exit_code = error_code;
+	thread_exit();
+	NOT_REACHED();
+}
+
 
 /* advanced scheduling, project 1 */
 /*****************************************************************/

@@ -190,6 +190,8 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
+void thread_exit_by_error(int error_code);
+
 /* custom */
 /***************************************************/
 /* alarm clock , project 1 */
