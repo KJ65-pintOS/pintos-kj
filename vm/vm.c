@@ -213,19 +213,20 @@ vm_get_frame (void) {
 static void
 vm_stack_growth (void *addr) {
 	struct thread* t;
-	uint64_t* stack_bottom;
+	void* stack_bottom;
 	struct page *page;
 	struct pml4* pml4;
 
-	ASSERT(is_user_stack(addr));
-	
 	addr = pg_round_down(addr);
 	pml4 = &thread_current()->pml4;
-
-	if(!vm_alloc_page(VM_ANON,addr,true)){
-		/* exception*/
+	stack_bottom = thread_current()->stack_bottom;
+	void* tmp = addr;
+	while(tmp < stack_bottom){
+		vm_alloc_page(VM_ANON,tmp,true);
+		tmp+=PGSIZE;
 	}
-	vm_claim_page(addr);
+	thread_current()->stack_bottom = addr;
+
 	return;
 }
 
@@ -242,32 +243,56 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct supplemental_page_table *spt;
 	struct page *page;
 	bool succ;
-	void* rsp = (void*)f->rsp;
+	void* rsp;
 
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 	succ = false;
 	spt = &thread_current()->spt;
-	struct thread* t = thread_current();
+	
 	if((page = spt_find_page(spt,addr)) == NULL){
-		/* page가 없는경우, 이상동작, 종료 */
-		if(is_kernel_vaddr(addr))
-			/* kernel에서 fault가 난 경우 */
-			return false;
-		if(f->rsp - 8 > addr )
-			/* 잘못된 접근 */
-			return false;
-		vm_stack_growth(addr);
-		/* stack */
-		return true;
+		/* page가 없는경우 */
+		
+		/* user_stack 검증 */
+		rsp = (void*)f->rsp;
+		if(is_user_stack(rsp, addr)){
+			vm_stack_growth(addr);
+			return true;
+		}
+		return false;
 	}
+	/* write 불가한 페이지에 작성하려는 경우 */
+	if(write == true && page->writable == false){
+		succ = false;
+		return succ;
+	} 
+	/* lazy load */
 
 	if(vm_do_claim_page (page))
 		succ = true;
 
 	return succ;
 }
+bool
+vm_spt_event(struct intr_frame* f,void* vaddr){
+	struct page* page;
+	struct supplemental_page_table* spt;
+	spt = &thread_current()->spt;
+	void* rsp = (void*)f->rsp;
 
+	if((page = spt_find_page(spt,vaddr)) == NULL){
+		/* page가 없는경우 */
+		
+		/* user_stack 검증 */
+		rsp = (void*)f->rsp;
+		if(is_user_stack(rsp, vaddr)){
+			vm_stack_growth(vaddr);
+			return true;
+		}
+			return false;
+	}
+	return true;
+}
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
 void

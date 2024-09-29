@@ -40,7 +40,7 @@ static struct file*
 get_file_by_fd(int fd);
 
 static bool
-is_vaddr_valid(void* vaddr);
+is_vaddr_valid(struct intr_frame* f,void* vaddr);
 
 static void
 halt_handler(struct intr_frame *f);
@@ -71,6 +71,10 @@ tell_handler(struct intr_frame* f);
 static void
 close_handler(struct intr_frame* f);
 
+static bool
+is_writable_vaddr(struct intr_frame *f, void* vaddr);
+static bool
+is_readable_vaddr(struct intr_frame* f, void* vaddr);
 
 #endif
 /* syscall, project 2 */
@@ -185,7 +189,7 @@ exec_handler(struct intr_frame* f)
 	fn_copy = NULL;
 	file_name = (char*)f->R.rdi;
 
-	if(!(is_vaddr_valid(file_name) && *file_name != NULL))
+	if(!(is_vaddr_valid(f,file_name) && *file_name != NULL))
 		goto err;
 	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL)
 		goto err;
@@ -223,8 +227,10 @@ create_handler(struct intr_frame* f)
 	file_name = (char*)f->R.rdi;
 	initial_size = (unsigned)f->R.rsi;
 
-	if(!is_vaddr_valid(file_name) || *file_name == NULL)
+	if(!(is_vaddr_valid(f,file_name)))
 		thread_exit_by_error(-1);
+	// if(!is_writable_vaddr(f,file_name))
+	// 	thread_exit_by_error(-1);
 
 	f->R.rax = filesys_create(file_name, initial_size);
 }
@@ -250,7 +256,10 @@ read_handler(struct intr_frame* f)
 	buffer = f->R.rsi;
 	size = f->R.rdx;
 
-	if(!is_vaddr_valid(buffer) ||  fd == STDOUT_FILENO)
+	if(!is_vaddr_valid(f,buffer) ||  fd == STDOUT_FILENO){
+		thread_exit_by_error(-1);
+	}
+	if(!is_writable_vaddr(f,buffer))
 		thread_exit_by_error(-1);
 	
 	struct thread* t = thread_current();
@@ -271,8 +280,9 @@ open_handler(struct intr_frame *f)
 
 	/* Open executable file. */
 	file_name = f->R.rdi;
-	if(!is_vaddr_valid(file_name) || file_name == NULL)
+	if(!is_vaddr_valid(f,file_name) || file_name == NULL)
 		thread_exit_by_error(-1);
+	
 
 	file = filesys_open (file_name);
 	if (file == NULL) {
@@ -323,8 +333,10 @@ write_handler(struct intr_frame* f)
 		return;
 	}
 
-	if( !is_vaddr_valid(buffer) || fd == STDIN_FILENO)
+	if( !is_vaddr_valid(f,buffer) || fd == STDIN_FILENO)
 		thread_exit_by_error(-1);
+	// if(!is_writable_vaddr(f,buffer));
+	// 	thread_exit_by_error(-1);
 
 	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
@@ -398,17 +410,32 @@ get_file_by_fd(int fd)
 }
 
 static bool
-is_vaddr_valid(void* vaddr)
+is_readable_vaddr(struct intr_frame* f, void* vaddr){
+	return (0x400000 <= vaddr && vaddr < USER_STACK);
+}
+static bool
+is_vaddr_valid(struct intr_frame *f, void* vaddr)
 {	
+	// struct page* page = spt_find_page(&thread_current()->spt, vaddr);
+	// if( !(0x400000 <= vaddr && vaddr < USER_STACK))
+	// 	return false;
+	// return vm_try_handle_fault(f,vaddr,true,page->writable,false);
 	#ifndef VM
 		return is_user_vaddr(vaddr)
 		&& pml4_get_page(thread_current()->pml4, vaddr);
 	#else
 		return is_user_vaddr(vaddr)
-		&& spt_find_page(&thread_current()->spt, vaddr);
+		&&(0x400000 <= vaddr && vaddr < USER_STACK)
+		&& vm_spt_event(f,vaddr);
 	#endif
 }
-
+static bool
+is_writable_vaddr(struct intr_frame *f, void* vaddr){
+	struct page* page = spt_find_page(&thread_current()->spt, vaddr);
+	if(page == NULL)
+		return false;
+	return page->writable;
+}
 /***********************************************************/
 
 /* Reads a byte at user virtual address UADDR.
