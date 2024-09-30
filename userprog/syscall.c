@@ -413,17 +413,18 @@ mmap_handler(struct intr_frame* f)
 	struct file *file = get_file_by_fd(fd);
 
 	// file의 길이가 null or 0byte이면 return
-	if(!file == NULL || file_length(file) == 0) {
+	if(file == NULL || file_length(file) == 0) {
 		f->R.rax = NULL;
 		return;
 	}
+
 	// fd가 0, 1이면 return
 	if(fd == 0 || fd == 1) {
 		f->R.rax = NULL;
 		return;
 	}
 	// addr가 0이거나 NULL이면 return
-	if(addr == 0 || addr == NULL) {
+	if(addr == NULL) {
 		f->R.rax = NULL;
 		return;
 	}
