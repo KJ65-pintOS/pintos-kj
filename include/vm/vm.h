@@ -34,10 +34,14 @@ enum vm_type {
 	/* Auxillary bit flag marker for store information. You can add more
 	 * markers, until the value is fit in the int. */
 	VM_MARKER_0 = (1 << 3),
+	VM_ELF = (1<<3),
+	
 	VM_MARKER_1 = (1 << 4),
+	VM_STACK = (1<<4),
 
 	/* DO NOT EXCEED THIS VALUE. */
 	VM_MARKER_END = (1 << 31),
+	
 };
 
 #include "vm/uninit.h"
@@ -51,6 +55,7 @@ struct page_operations;
 struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
+#define VM_MARKER(type) ((type) & ~7)
 
 /* The representation of "page".
  * This is kind of "parent class", which has four "child class"es, which are
@@ -143,6 +148,7 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
 
 #endif  /* VM_VM_H */
 

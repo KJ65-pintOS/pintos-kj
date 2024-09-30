@@ -33,7 +33,7 @@ struct fd_table{
 #define is_occupied(struct_fd, index ) ( struct_fd->fd_array[index] != 0 )
 #define is_empty(struct_fd, index) ( struct_fd->fd_array[index] == 0)
 #define is_file(struct_fd, index) (strucr_fd->fd_array[index] != 0 && 0) // 수정해야함.
-#define is_valid_fd(struct_fd, index)
+//#define is_valid_fd(struct_fd, index)
 #define get_user_fd(thread) (thread->fd_table)
 #define get_file(struct_fd , index) (struct_fd->fd_array[index])
 #define free_fd(struct_fd, index) (struct_fd->fd_array[index] = (void*)0)

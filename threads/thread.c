@@ -302,6 +302,9 @@ thread_create (const char *name, int priority,
 	list_push_back(&curr->child_list, &process->elem);
 	
 #endif
+#ifdef VM
+	t->stack_bottom = USER_STACK;
+#endif
 
 	/* Add to run queue. */
 	thread_unblock (t);

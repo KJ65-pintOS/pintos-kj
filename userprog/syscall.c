@@ -70,11 +70,18 @@ static void
 tell_handler(struct intr_frame* f);
 static void
 close_handler(struct intr_frame* f);
+static void
+dup2_handler(struct intr_frame* f);
+static void
+mmap_handler(struct intr_frame* f);
+static void
+munmap_handler(struct intr_frame* f);
+
 
 static bool
-is_writable_vaddr(struct intr_frame *f, void* vaddr);
+is_vaddr_valid2(struct intr_frame *f, void* vaddr);
 static bool
-is_readable_vaddr(struct intr_frame* f, void* vaddr);
+is_mmap_vaddr_valid(struct intr_frame* f, void* vaddr);
 
 #endif
 /* syscall, project 2 */
@@ -125,8 +132,15 @@ syscall_init (void) {
 	syscall_handlers[SYS_SEEK] = seek_handler;
 	syscall_handlers[SYS_TELL] = tell_handler;
 	syscall_handlers[SYS_CLOSE] = close_handler;
+	syscall_handlers[SYS_DUP2] = dup2_handler;
+
 
 #endif /* syscall, project 2 */
+
+#ifdef VM
+	syscall_handlers[SYS_MMAP] = mmap_handler;
+	syscall_handlers[SYS_MUNMAP] = munmap_handler;
+#endif
 }
 
 /* The main system call interface */
@@ -189,7 +203,7 @@ exec_handler(struct intr_frame* f)
 	fn_copy = NULL;
 	file_name = (char*)f->R.rdi;
 
-	if(!(is_vaddr_valid(f,file_name) && *file_name != NULL))
+	if(!(is_vaddr_valid(f,file_name)))
 		goto err;
 	if((fn_copy =  palloc_get_page(PAL_USER)) == NULL)
 		goto err;
@@ -229,8 +243,6 @@ create_handler(struct intr_frame* f)
 
 	if(!(is_vaddr_valid(f,file_name)))
 		thread_exit_by_error(-1);
-	// if(!is_writable_vaddr(f,file_name))
-	// 	thread_exit_by_error(-1);
 
 	f->R.rax = filesys_create(file_name, initial_size);
 }
@@ -256,10 +268,11 @@ read_handler(struct intr_frame* f)
 	buffer = f->R.rsi;
 	size = f->R.rdx;
 
-	if(!is_vaddr_valid(f,buffer) ||  fd == STDOUT_FILENO){
+	if(!is_vaddr_valid(f,buffer) ||  fd == STDOUT_FILENO ){
 		thread_exit_by_error(-1);
 	}
-	if(!is_writable_vaddr(f,buffer))
+	struct page* page = spt_find_page(&thread_current()->spt,buffer);
+	if(!page->writable)
 		thread_exit_by_error(-1);
 	
 	struct thread* t = thread_current();
@@ -282,7 +295,7 @@ open_handler(struct intr_frame *f)
 	file_name = f->R.rdi;
 	if(!is_vaddr_valid(f,file_name) || file_name == NULL)
 		thread_exit_by_error(-1);
-	
+
 
 	file = filesys_open (file_name);
 	if (file == NULL) {
@@ -335,8 +348,10 @@ write_handler(struct intr_frame* f)
 
 	if( !is_vaddr_valid(f,buffer) || fd == STDIN_FILENO)
 		thread_exit_by_error(-1);
-	// if(!is_writable_vaddr(f,buffer));
-	// 	thread_exit_by_error(-1);
+	/* writable 봐야함 */
+	struct page* page = spt_find_page(&thread_current()->spt,buffer);
+	if(!page->writable)
+		thread_exit_by_error(-1);
 
 	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
@@ -394,6 +409,51 @@ close_handler(struct intr_frame* f)
 	file_close(file);
 }
 
+static void
+dup2_handler(struct intr_frame* f)
+{
+
+}
+
+static void
+mmap_handler(struct intr_frame* f)
+{
+	void* addr;
+	size_t length;
+	int writable;
+	int fd;
+	off_t offset;
+	struct file* file;
+
+	addr = (void*)f->R.rdi;
+	length = (size_t)f->R.rsi;
+	writable = (int)f->R.rdx;
+	fd = (int)f->R.r10;
+	offset = (off_t)f->R.r8;
+	void* length2 = length;
+	void* rsp = f->rsp;
+
+	if(!is_mmap_vaddr_valid(f,addr) 
+	|| !is_mmap_vaddr_valid(f,addr+length) 
+	|| offset != pg_round_down(offset) ){
+		f->R.rax = NULL;
+		return;
+	}
+	if((file = get_file_by_fd(fd)) == NULL || fd == STDIN_FILENO || fd == STDOUT_FILENO){
+		/* file doesn't exist */
+		f->R.rax = NULL;
+		return;
+	}
+	
+	f->R.rax = addr;
+}
+
+static void
+munmap_handler(struct intr_frame* f)
+{
+
+}
+
 /***********************************************************/
 /* static functions */
 
@@ -408,34 +468,39 @@ get_file_by_fd(int fd)
 	//todo 유효한 파일인지 검사, 이미 닫혔는지 아닌지, 가르키는 주소가 파일이 맞는지.
 	return get_file(fd_table,fd);
 }
-
-static bool
-is_readable_vaddr(struct intr_frame* f, void* vaddr){
-	return (0x400000 <= vaddr && vaddr < USER_STACK);
-}
 static bool
 is_vaddr_valid(struct intr_frame *f, void* vaddr)
 {	
-	// struct page* page = spt_find_page(&thread_current()->spt, vaddr);
-	// if( !(0x400000 <= vaddr && vaddr < USER_STACK))
-	// 	return false;
-	// return vm_try_handle_fault(f,vaddr,true,page->writable,false);
 	#ifndef VM
 		return is_user_vaddr(vaddr)
 		&& pml4_get_page(thread_current()->pml4, vaddr);
 	#else
-		return is_user_vaddr(vaddr)
-		&&(0x400000 <= vaddr && vaddr < USER_STACK)
-		&& vm_spt_event(f,vaddr);
+		if( USER_BASE > vaddr || vaddr >= USER_STACK )
+			return false;
+		if(is_user_stack(f->rsp,vaddr))
+			return true;
+		/* 전역 변수에 해당 하는 경우에만 사용 */
+		/* TODO:write 가능한 페이지만 검사하는 로직 추가*/
+		if(spt_find_page(&thread_current()->spt,vaddr))
+			return true;
+		return false;
+		
 	#endif
 }
+
 static bool
-is_writable_vaddr(struct intr_frame *f, void* vaddr){
-	struct page* page = spt_find_page(&thread_current()->spt, vaddr);
-	if(page == NULL)
+is_mmap_vaddr_valid(struct intr_frame* f, void* vaddr){
+	if(vaddr != pg_round_down(vaddr))
 		return false;
-	return page->writable;
+	if( vaddr < 0x400000  || vaddr >= KERN_BASE)
+		return false;
+	if(is_user_stack(f->rsp,vaddr))
+		return false;
+	if(spt_find_page(&thread_current()->spt,vaddr))
+		return false;
+	return true;
 }
+
 /***********************************************************/
 
 /* Reads a byte at user virtual address UADDR.
@@ -455,7 +520,7 @@ get_user (const uint8_t *uaddr) {
 
 /* Writes BYTE to user address UDST.
  * UDST must be below KERN_BASE.
- * Returns true if successful, false if a segfault occurred. */
+ * Returns true if successful, false if a secgfault occurred. */
 static bool
 put_user (uint8_t *udst, uint8_t byte) {
     int64_t error_code;

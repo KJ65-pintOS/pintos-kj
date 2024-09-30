@@ -90,7 +90,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			goto err;
 
 		/* select the initializer by argument type */
-		switch(type){
+		switch(VM_TYPE(type)){
 			case VM_ANON:
 				initializer = anon_initializer;
 				break;
@@ -222,7 +222,7 @@ vm_stack_growth (void *addr) {
 	stack_bottom = thread_current()->stack_bottom;
 	void* tmp = addr;
 	while(tmp < stack_bottom){
-		vm_alloc_page(VM_ANON,tmp,true);
+		vm_alloc_page(VM_ANON|VM_STACK,tmp,true);
 		tmp+=PGSIZE;
 	}
 	thread_current()->stack_bottom = addr;
@@ -289,7 +289,7 @@ vm_spt_event(struct intr_frame* f,void* vaddr){
 			vm_stack_growth(vaddr);
 			return true;
 		}
-			return false;
+		return false;
 	}
 	return true;
 }
