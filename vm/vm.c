@@ -83,6 +83,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		uninit_new(page, upage, init, type, aux, page_initializer);
 
 		page->writable = writable;
+		page->plm4 = thread_current()->pml4;
 
 		/* TODO: Insert the page into the spt. VM_TYPE 매크로를 사용 */
 		if (!spt_insert_page(spt, page)) {
@@ -277,6 +278,11 @@ vm_dealloc_page (struct page *page) {
 	free (page);
 }
 
+void
+vm_dealloc_frame(struct frame *frame) {
+	free(frame);
+}
+
 /* Claim이란, physical frame에 page를 할당하는 것을 의미한다 */
 /* Claim the page that allocate on VA. */ 
 /* 위 함수는 인자로 주어진 va에 페이지를 할당하고, 해당 페이지에 프레임을 할당합니다. 
@@ -305,9 +311,8 @@ vm_do_claim_page (struct page *page) {
 	struct thread *t = thread_current();
 	if (!(pml4_get_page (t->pml4, page->va) == NULL
 			&& pml4_set_page (t->pml4, page->va, frame->kva, page->writable))) {		
-		palloc_free_page(frame->kva);
-		free(frame);
-		free(page);
+		vm_dealloc_frame(frame);
+		vm_dealloc_page(page);
 		NOT_REACHED();
 		return false;
 	}
@@ -399,8 +404,8 @@ page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUS
 
 void page_free (struct hash_elem *p_, void *aux UNUSED) {
 	const struct page *p = hash_entry (p_, struct page, hash_elem);
-	destroy(p);
-	free(p);
+	free(p->frame);
+	vm_dealloc_page(p);
 }
 
 unsigned

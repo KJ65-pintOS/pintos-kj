@@ -60,7 +60,7 @@ struct page { // vm_entry의 역할
 	/* Your implementation */
 	struct hash_elem hash_elem;
 	bool writable;
-	bool is_user_stack; // get_victim에서 고려해야 하나?
+	uint64_t *plm4;
 	int fault_cnt;
 	// location in swqp area
 	// reference to the file object and offset(memory mapped file)

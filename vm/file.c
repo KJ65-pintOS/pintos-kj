@@ -12,6 +12,8 @@ static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
 bool lazy_load_file(struct page *page, void *aux);
+void free_resources(struct file_page *fpage);
+void write_back(struct file *mm_file, struct file_page *fpage);
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
@@ -21,11 +23,14 @@ static const struct page_operations file_ops = {
 	.type = VM_FILE,
 };
 
+struct lock file_lock;
+
 /* The initializer of file vm 
 	파일 지원 페이지 하위 시스템을 초기화합니다. 이 기능에서는 file_backed_page와 관련된 모든 것을 설정할 수 있습니다.
 */
 void
 vm_file_init (void) {
+	lock_init(&file_lock);
 }
 
 /* Initialize the file backed page 
@@ -38,7 +43,6 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 	page->operations = &file_ops;
 
 	struct file_page *file_page = &page->file;
-	list_init(&file_page->mm_pages);
 	file_page->page = page;
 	file_page->load_args = NULL;
 
@@ -66,11 +70,12 @@ file_backed_swap_out (struct page *page) {
 static void
 file_backed_destroy (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
+	free(file_page->load_args);
 }
 
 bool is_valid_mmap(void *addr, size_t length, bool writable, int fd, off_t offset) {
 	void *ofs = pg_ofs(addr);
-	if (addr == NULL || pg_ofs(addr) != NULL || addr >= (KERN_BASE - PGSIZE) || length == 0 || fd < 2 || fd > 512 || offset != 0)
+	if (addr == NULL || pg_ofs(addr) != NULL || addr >= (KERN_BASE - PGSIZE) || length == 0 || fd < 2 || fd > 512 || pg_ofs(offset) != NULL)
 		return false;
 	struct page *page = spt_find_page(&thread_current()->spt, addr);
 
@@ -90,10 +95,9 @@ bool is_valid_mmap(void *addr, size_t length, bool writable, int fd, off_t offse
 void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
-	size_t actual_len = file_length(file);
 	size_t read_bytes = length;
 	void *upage = addr;
-
+	
 	while (read_bytes > 0) {
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
@@ -114,7 +118,6 @@ do_mmap (void *addr, size_t length, int writable,
 			return;
 		}
 		
-
 		/* Advance */
 		read_bytes -= page_read_bytes;
 		upage += PGSIZE;
@@ -140,8 +143,8 @@ bool lazy_load_file(struct page *page, void *aux) {
 
 	memset(kpage + page_read_bytes, 0, load_args->page_zero_bytes);
 
-	list_push_back(&page->file.mm_pages, &page->file.elem);
-
+	list_push_back(&thread_current()->mm_pages, &page->file.elem);
+	
 	return true;
 }
 
@@ -165,18 +168,54 @@ do_munmap (void *addr) {
 	struct page *start_file_page = spt_find_page(&thread_current()->spt, addr);
 	if (start_file_page == NULL)
 		return;
+	struct file *mm_file = start_file_page->file.load_args->file;
+	struct list *mm_pages = &thread_current()->mm_pages;
 	bool is_dirty = pml4_is_dirty(thread_current()->pml4, start_file_page->va);
-	struct list *mm_pages = &start_file_page->file.mm_pages;
+	list_remove(&start_file_page->file.elem);
 	struct list_elem *e;
-	for (e = list_begin(mm_pages); e != list_end(mm_pages); e = list_next(e)) {
-		
-		struct file_page *fpage = list_entry(e, struct file_page, elem);
-		if (is_dirty) {
-
-		}
-		
-	}
-
-	file_close(start_file_page->file.load_args->file);
-
+	while (!list_empty(mm_pages)) {
+		e = list_pop_front(mm_pages);
+		struct file_page *fpage = list_entry(e, struct file_page, elem);		
+        if (is_dirty)
+        	write_back(mm_file, fpage);
+    	free_resources(fpage);
+    }
+	if (is_dirty)
+		write_back(mm_file, &start_file_page->file);
+	file_close(mm_file);
+	free_resources(&start_file_page->file);
 }
+
+void implicit_munmap(struct supplemental_page_table* spt) {
+	struct thread *currunt = thread_current();
+
+	if (list_empty(&currunt->mm_pages))
+		return;
+	struct list_elem *e;
+	while (!list_empty(&currunt->mm_pages)) {
+		e = list_pop_front(&currunt->mm_pages);
+		struct file_page *fpage = list_entry(e, struct file_page, elem);		
+		do_munmap(fpage->page->va);
+	}
+}
+
+void free_resources(struct file_page *fpage)
+{
+    struct page *page = fpage->page;
+    vm_dealloc_frame(page->frame);
+	pml4_clear_page(thread_current()->pml4, page->va);
+	spt_remove_page(&thread_current()->spt, page);
+}
+
+void write_back(struct file *mm_file, struct file_page *fpage) {
+	size_t offset = fpage->load_args->ofs;
+	size_t page_read_bytes = fpage->load_args->page_read_bytes;
+    lock_acquire(&file_lock);
+    file_seek(mm_file, offset);
+    if (file_write(mm_file, fpage->page->frame->kva, page_read_bytes) != page_read_bytes){
+		lock_release(&file_lock);
+		thread_kill();
+	}
+    lock_release(&file_lock);
+}
+

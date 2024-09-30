@@ -330,7 +330,7 @@ write_handler(struct intr_frame* f)
 		return;
 	}
 
-	if( !is_vaddr_valid_with_write(buffer, true) || fd == STDIN_FILENO) {
+	if(!is_vaddr_valid(buffer) || fd == STDIN_FILENO) {
 		thread_current()->exit_code = -1;
 		thread_exit();
 		NOT_REACHED();
@@ -530,6 +530,7 @@ mmap_handler(struct intr_frame* f) {
 static void
 munmap_handler(struct intr_frame* f) {
 	void* addr = (void *)f->R.rdi;
+	do_munmap(addr);
 }
 
 /* vm, project 3 */

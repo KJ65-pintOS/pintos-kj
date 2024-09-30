@@ -21,6 +21,7 @@
 #include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
+#include "vm/file.h"
 #endif
 
 #include "threads/malloc.h"
@@ -405,7 +406,9 @@ process_exit (void) {
 	}
 	if(t->is_process)
 		printf ("%s: exit(%d)\n", t->name, t->exit_code); // process name & exit code
-
+#ifdef VM
+	implicit_munmap(&t->spt);
+#endif
 	process_cleanup ();
 }
 
@@ -413,7 +416,6 @@ process_exit (void) {
 static void
 process_cleanup (void) {
 	struct thread *curr = thread_current ();
-
 #ifdef VM
 	supplemental_page_table_kill (&curr->spt);
 #endif
