@@ -73,6 +73,12 @@ tell_handler(struct intr_frame* f);
 static void
 close_handler(struct intr_frame* f);
 
+// project3
+static void
+mmap_handler(struct intr_frame* f);
+static void
+munmap_handler(struct intr_frame* f);
+
 
 #endif
 /* syscall, project 2 */
@@ -123,6 +129,10 @@ syscall_init (void) {
 	syscall_handlers[SYS_SEEK] = seek_handler;
 	syscall_handlers[SYS_TELL] = tell_handler;
 	syscall_handlers[SYS_CLOSE] = close_handler;
+	// project3 mmap 
+	syscall_handlers[SYS_MMAP] = mmap_handler;
+	//syscall_handlers[SYS_MUNMAP] = munmap_handler;
+
 
 #endif /* syscall, project 2 */
 }
@@ -388,6 +398,51 @@ close_handler(struct intr_frame* f)
 	free_fd(get_fd_table(current),fd);
 	file_close(file);
 }
+
+static void
+mmap_handler(struct intr_frame* f)  
+{
+	
+	void *addr = f->R.rdi;
+	size_t length = f->R.rsi;
+	int writable = f->R.rdx;
+	int fd = f->R.r10;
+	off_t offset = f->R.r8;
+
+	// fd로 file 가져오기
+	struct file *file = get_file_by_fd(fd);
+
+	// file의 길이가 null or 0byte이면 return
+	if(!file == NULL || file_length(file) == 0) {
+		f->R.rax = NULL;
+		return;
+	}
+	// fd가 0, 1이면 return
+	if(fd == 0 || fd == 1) {
+		f->R.rax = NULL;
+		return;
+	}
+	// addr가 0이거나 NULL이면 return
+	if(addr == 0 || addr == NULL) {
+		f->R.rax = NULL;
+		return;
+	}
+
+	//length가 0이면 return
+	if (length == 0) {
+		f->R.rax = NULL;
+		return;
+	}
+
+	return do_mmap(addr, length, writable, file, offset);
+};
+
+// static void
+// munmap_handler(void *addr) 
+// {
+
+// 	return do_munmap(addr);
+// };
 
 /***********************************************************/
 /* static functions */
