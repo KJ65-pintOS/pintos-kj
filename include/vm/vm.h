@@ -124,6 +124,12 @@ struct supplemental_page_table {
 	struct hash page_hash;
 	struct lock lock;
 };
+struct load_args{
+    struct file* file;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
+    off_t ofs;
+};
 
 #include "threads/thread.h"
 void supplemental_page_table_init (struct supplemental_page_table *spt);

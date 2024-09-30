@@ -35,6 +35,7 @@ anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	page->operations = &anon_ops;
 	memset(kva,0,PGSIZE);
 	struct anon_page *anon_page = &page->anon;
+	return true;
 }
 
 /* Swap in the page by read contents from the swap disk. */

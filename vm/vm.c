@@ -434,11 +434,12 @@ err:
 		vm_dealloc_page(page);
 }
 
+
 static void
 vm_dealloc_frame(struct frame *frame){
 	ASSERT(frame != NULL);
-	
-	free(frame->kva);
+	if(frame->kva)
+		free(frame->kva);
 	free(frame);
 }
 

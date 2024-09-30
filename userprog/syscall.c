@@ -357,6 +357,7 @@ write_handler(struct intr_frame* f)
 		f->R.rax = -1;
 		return;
 	}
+
 	f->R.rax = file_write(file,buffer,size);
 }
 
@@ -430,22 +431,20 @@ mmap_handler(struct intr_frame* f)
 	writable = (int)f->R.rdx;
 	fd = (int)f->R.r10;
 	offset = (off_t)f->R.r8;
-	void* length2 = length;
-	void* rsp = f->rsp;
 
-	if(!is_mmap_vaddr_valid(f,addr) 
+	if(!is_mmap_vaddr_valid(f,addr)
+	|| length == 0 /* length 는 unsigned 이므로 음수 일 수 없음. */
 	|| !is_mmap_vaddr_valid(f,addr+length) 
-	|| offset != pg_round_down(offset) ){
-		f->R.rax = NULL;
-		return;
-	}
-	if((file = get_file_by_fd(fd)) == NULL || fd == STDIN_FILENO || fd == STDOUT_FILENO){
-		/* file doesn't exist */
+	|| offset != pg_round_down(offset)
+	||(file = get_file_by_fd(fd)) == NULL
+	|| fd == STDIN_FILENO 
+	|| fd == STDOUT_FILENO ){
 		f->R.rax = NULL;
 		return;
 	}
 	
-	f->R.rax = addr;
+	/* if do_mmap failed , then it always return NULL */
+	f->R.rax = do_mmap(addr,length,writable,file,offset);
 }
 
 static void
@@ -487,12 +486,11 @@ is_vaddr_valid(struct intr_frame *f, void* vaddr)
 		
 	#endif
 }
-
 static bool
 is_mmap_vaddr_valid(struct intr_frame* f, void* vaddr){
 	if(vaddr != pg_round_down(vaddr))
 		return false;
-	if( vaddr < 0x400000  || vaddr >= KERN_BASE)
+	if( vaddr >= KERN_BASE)
 		return false;
 	if(is_user_stack(f->rsp,vaddr))
 		return false;
