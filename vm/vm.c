@@ -310,67 +310,53 @@ void supplemental_page_table_init(struct supplemental_page_table *spt UNUSED) {
 /* Copy supplemental page table from src to dst */
 bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED,
                                   struct supplemental_page_table *src UNUSED) {
-  // 해시 테이블을 순회하기 위한 이터레이터 선언
-  struct hash_iterator iterator;
+    // 해시 테이블을 순회하기 위한 이터레이터 선언
+    struct hash_iterator iterator;
+    
+    // 소스 SPT의 해시 테이블 순회 시작
+    // hash_first 함수로 이터레이터를 초기화하고 첫 번째 요소를 가리키도록 함
+    hash_first (&iterator, &src->hash_spt);
+    
+    // 해시 테이블의 모든 요소를 순회
+    while (hash_next (&iterator)) {
+        // 현재 해시 요소에서 페이지 구조체 추출
+        // hash_entry 매크로를 사용하여 현재 해시 요소를 struct page 포인터로 변환
+        struct page *parent_page = hash_entry(hash_cur(&iterator), struct page, hash_elem);
+        
+        // 부모 페이지의 타입, 쓰기 가능 여부, 가상 주소 추출
+        // operations 구조체를 통해 페이지 타입 접근
+        enum vm_type parent_page_type = parent_page->operations->type;
+        bool parent_page_writable = parent_page->writable;
+        void *parent_page_address = parent_page->va;
 
-  // 소스 SPT의 해시 테이블 순회 시작
-  // hash_first 함수로 이터레이터를 초기화하고 첫 번째 요소를 가리키도록 함
-  hash_first(&iterator, &src->hash_spt);
+        if (parent_page_type == VM_UNINIT) {
+            // 초기화 함수와 보조 데이터 추출
+            vm_initializer *init = parent_page->uninit.init;
+            void *aux = parent_page->uninit.aux;
 
-  // 해시 테이블의 모든 요소를 순회
-  while (hash_next(&iterator)) {
-    // 현재 해시 요소에서 페이지 구조체 추출
-    // hash_entry 매크로를 사용하여 현재 해시 요소를 struct page 포인터로 변환
-    struct page *parent_page =
-        hash_entry(hash_cur(&iterator), struct page, hash_elem);
+            // 수정: parent_page->uninit.type을 사용하여 원래 의도된 타입으로 페이지 할당
+            if (!vm_alloc_page_with_initializer(parent_page->uninit.type,
+                                                parent_page_address,
+                                                parent_page_writable,
+                                                init, aux))
+                return false;
+        } else {
+            // 이미 초기화된 페이지 처리
+            if (!vm_alloc_page(parent_page_type, parent_page_address, parent_page_writable))
+                return false;
+            // 물리 메모리 요청 및 페이지 테이블 매핑
+            if (!vm_claim_page(parent_page_address))
+                return false;
 
-    // 부모 페이지의 타입, 쓰기 가능 여부, 가상 주소 추출
-    // operations 구조체를 통해 페이지 타입 접근
-    enum vm_type parent_page_type = parent_page->operations->type;
-    bool parent_page_writable = parent_page->writable;
-    void *parent_page_address = parent_page->va;
-
-    // 페이지 타입이 초기화되지 않은 상태(VM_UNINIT)라면
-    if (parent_page_type == VM_UNINIT) {
-      // 초기화 함수와 보조 데이터 추출
-      // uninit 구조체에서 초기화 함수와 보조 데이터 포인터를 가져옴
-      vm_initializer *init = parent_page->uninit.init;
-      void *aux = parent_page->uninit.aux;
-
-      // 초기화되지 않은 페이지를 위한 새 페이지 할당
-      // VM_ANON 타입으로 할당하여 나중에 실제 데이터로 초기화될 수 있도록 함
-      // init 함수와 aux 데이터를 사용하여 나중에 페이지를 초기화할 수 있도록
-      // 설정
-      vm_alloc_page_with_initializer(VM_ANON, parent_page_address,
-                                     parent_page_writable, init, aux);
+            // 대상 SPT에서 새로 할당된 페이지 찾기
+            struct page *dst_page = spt_find_page(dst, parent_page_address);
+            // 페이지 내용 복사
+            memcpy(dst_page->frame->kva, parent_page->frame->kva, PGSIZE);
+        }
     }
-
-    // 페이지 타입에 따라 새 페이지 할당 (초기화되지 않은 페이지가 아닌 경우)
-    // vm_alloc_page 함수를 호출하여 페이지 타입에 맞는 새 페이지 할당
-    // 이 함수는 내부적으로 vm_alloc_page_with_initializer를 호출하지만 init과
-    // aux는 NULL로 설정
-    if (!vm_alloc_page(parent_page_type, parent_page_address,
-                       parent_page_writable))
-      return false; // 페이지 할당 실패 시 함수 종료
-
-    // 할당된 페이지에 대해 물리 메모리 요청
-    // vm_claim_page 함수를 호출하여 실제 물리 메모리를 할당하고 페이지 테이블에
-    // 매핑
-    if (!vm_claim_page(parent_page_address))
-      return false; // 물리 메모리 요청 실패 시 함수 종료
-
-    // 대상 SPT에서 새로 할당된 페이지 찾기
-    // spt_find_page 함수를 사용하여 대상 SPT에서 방금 할당한 페이지를 찾음
-    struct page *dst_page = spt_find_page(dst, parent_page_address);
-
-    // 소스 페이지의 내용을 대상 페이지로 복사 (페이지 크기만큼)
-    // 부모 페이지의 물리 메모리 내용을 자식 페이지의 물리 메모리로 복사
-    // kva(kernel virtual address)를 사용하여 커널 공간에서 직접 메모리 복사
-    memcpy(dst_page->frame->kva, parent_page->frame->kva, PGSIZE);
-  }
-
-  // 모든 페이지 복사가 성공적으로 완료됨
-  return true;
+    
+    // 모든 페이지 복사가 성공적으로 완료됨
+    return true;
 }
 
 /* Free the resource hold by the supplemental page table */

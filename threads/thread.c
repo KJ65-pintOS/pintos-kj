@@ -398,7 +398,6 @@ thread_exit (void) {
 		free(process);
 	}
 
-
 	process_exit ();
 	/* notice to parent */
 	if(t != initial_thread){

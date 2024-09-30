@@ -586,7 +586,6 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
-
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
 	for (i = 0; i < ehdr.e_phnum; i++) {
@@ -954,7 +953,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		/**********************************************************************/
 		/* project 3 */
-		struct aux_info *aux_info = (struct aux_info *)malloc(sizeof(struct aux_info));
+        struct aux_info *aux_info = malloc(sizeof(struct aux_info));
+        if (aux_info == NULL)
+            return false;
 
 		aux_info->file = file;
 		aux_info->ofs=ofs;
@@ -962,9 +963,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		aux_info->page_zero_bytes=page_zero_bytes;
 		/**********************************************************************/
 		
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable,lazy_load_segment, aux_info))
-			return false;
+        if (!vm_alloc_page_with_initializer (VM_FILE, upage,
+                                             writable, lazy_load_segment, aux_info)) {
+            free(aux_info);
+            return false;
+        }
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
@@ -994,7 +997,7 @@ setup_stack (struct intr_frame *if_) {
 		success = vm_claim_page(stack_bottom);
 		if (success) {
 			if_->rsp = USER_STACK;
-
+            memset(stack_bottom, 0, PGSIZE);  // 스택 초기화
 		} 
 	}
 	
