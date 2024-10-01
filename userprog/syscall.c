@@ -44,6 +44,9 @@ is_vaddr_valid(void* vaddr);
 static bool
 is_write_valid(void* vaddr);
 
+void 
+check_valid_buffer(void *buffer, unsigned size, bool writable, struct intr_frame *f);
+
 static void
 halt_handler(struct intr_frame *f);
 static void
@@ -261,6 +264,8 @@ read_handler(struct intr_frame* f)
 	buffer = f->R.rsi;
 	size = f->R.rdx;
 
+	check_valid_buffer(buffer, size, true, f);
+
 	if(!is_vaddr_valid(buffer) || !is_write_valid(buffer) || fd == STDOUT_FILENO){
 		// thread.c 함수화
 		thread_exit_by_error(-1);
@@ -330,8 +335,9 @@ write_handler(struct intr_frame* f)
 	fd = f->R.rdi;
 	buffer = f->R.rsi;
 	size = f->R.rdx;
-
-
+	
+	check_valid_buffer(buffer, size, true, f);
+	
 	/* 표준 출력에 작성 */
 	if(fd == STDOUT_FILENO)	{
 		putbuf(buffer,size);
@@ -488,6 +494,34 @@ is_write_valid(void* vaddr)
     struct page *page = spt_find_page(&thread_current()->spt, vaddr);
     return page != NULL && page->writable;
 }
+
+void 
+check_valid_buffer(void *buffer, unsigned size, bool writable, struct intr_frame *f) {
+    void *addr = buffer;
+
+    // 버퍼의 시작부터 크기만큼 반복하면서 모든 주소를 확인
+    for (unsigned i = 0; i < size; i += PGSIZE) {
+        void *page_addr = pg_round_down(addr + i); // 페이지 단위로 내림해서 확인
+
+        // is_vaddr_valid()로 유효성 검사
+        if (!is_vaddr_valid(page_addr)) {
+            // 페이지 폴트를 처리할 수 없으면 잘못된 접근으로 판단하고 종료
+            if (!vm_try_handle_fault(f, page_addr, true, writable, true)) {
+                thread_current()->exit_code = -1;
+                thread_exit();
+            }
+        } else if (writable) {
+            // 쓰기 권한이 있는지 확인
+            struct page *page = spt_find_page(&thread_current()->spt, page_addr);
+            if (!page->writable) {
+                // 쓰기 권한이 없는 경우
+                thread_current()->exit_code = -1;
+                thread_exit();
+            }
+        }
+    }
+}
+
 /***********************************************************/
 
 /* Reads a byte at user virtual address UADDR.
