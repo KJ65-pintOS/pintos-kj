@@ -202,7 +202,6 @@ void implicit_munmap(struct supplemental_page_table* spt) {
 void free_resources(struct file_page *fpage)
 {
     struct page *page = fpage->page;
-    vm_dealloc_frame(page->frame);
 	pml4_clear_page(thread_current()->pml4, page->va);
 	spt_remove_page(&thread_current()->spt, page);
 }
