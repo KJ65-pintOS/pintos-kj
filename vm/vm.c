@@ -348,6 +348,7 @@ vm_do_claim_page (struct page *page) {
 	if(!swap_in (page, frame->kva))
 		goto err;
 	return true;
+	
 err:
 	if(frame)
 		vm_dealloc_frame(frame);

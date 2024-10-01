@@ -56,16 +56,12 @@ struct process {
     struct lock lock;
     struct semaphore sema;
     struct list_elem elem;
+    
+    struct list mmap_list;
 };
 
 
 #endif
-/* file descriptor, project 2 */
-/*********************************************/
-/* vm, project 3 */
-
-/* TODO: load_args vm으로 이동 필요 */
-/* vm, project 3 */
 
 
 

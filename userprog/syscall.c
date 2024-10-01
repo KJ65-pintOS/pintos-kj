@@ -272,7 +272,7 @@ read_handler(struct intr_frame* f)
 		thread_exit_by_error(-1);
 	}
 	struct page* page = spt_find_page(&thread_current()->spt,buffer);
-	if(!page->writable)
+	if(page != NULL && !page->writable)
 		thread_exit_by_error(-1);
 	
 	struct thread* t = thread_current();
@@ -334,6 +334,7 @@ write_handler(struct intr_frame* f)
 	struct file *file;
 	int fd;
 	void* buffer;
+
 	unsigned size;
 	
 	fd = f->R.rdi;
@@ -346,12 +347,13 @@ write_handler(struct intr_frame* f)
 		return;
 	}
 
+
 	if( !is_vaddr_valid(f,buffer) || fd == STDIN_FILENO)
 		thread_exit_by_error(-1);
 	/* writable 봐야함 */
-	struct page* page = spt_find_page(&thread_current()->spt,buffer);
-	if(!page->writable)
-		thread_exit_by_error(-1);
+	// struct page* page = spt_find_page(&thread_current()->spt,buffer);
+	// if(page != NULL && !page->writable)
+	// 	thread_exit_by_error(-1);
 
 	if((file = get_file_by_fd(fd)) == NULL){
 		f->R.rax = -1;
@@ -442,6 +444,28 @@ mmap_handler(struct intr_frame* f)
 		f->R.rax = NULL;
 		return;
 	}
+
+
+
+
+	// size_t tmp = 0;
+	// while( tmp < length){
+	// 	if(!is_mmap_vaddr_valid(f,addr+tmp)){
+	// 		f->R.rax = NULL;
+	// 		return;
+	// 	}
+	// 	tmp += PGSIZE;
+	// }
+
+	struct fd_table* fd_table = get_fd_table(thread_current());
+	file = file_duplicate(file);
+	if((fd = find_empty_fd(fd_table)) == -1 ){
+		file_close(file);
+		f->R.rax = -1;
+		return;
+	}
+	/* 이 file을 해제하는 건 누가해야하는가 아마 process 종료시에 ? */
+	set_fd(fd_table,fd,file);
 	
 	/* if do_mmap failed , then it always return NULL */
 	f->R.rax = do_mmap(addr,length,writable,file,offset);
@@ -449,8 +473,12 @@ mmap_handler(struct intr_frame* f)
 
 static void
 munmap_handler(struct intr_frame* f)
-{
+{	
+	void* addr;
 
+	addr = f->R.rdi;
+
+	do_munmap(addr);
 }
 
 /***********************************************************/
@@ -488,9 +516,11 @@ is_vaddr_valid(struct intr_frame *f, void* vaddr)
 }
 static bool
 is_mmap_vaddr_valid(struct intr_frame* f, void* vaddr){
+	if(vaddr == NULL)
+		return false;
 	if(vaddr != pg_round_down(vaddr))
 		return false;
-	if( vaddr >= KERN_BASE)
+	if(is_kernel_vaddr(vaddr))
 		return false;
 	if(is_user_stack(f->rsp,vaddr))
 		return false;

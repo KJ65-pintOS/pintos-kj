@@ -39,6 +39,8 @@ enum vm_type {
 	VM_MARKER_1 = (1 << 4),
 	VM_STACK = (1<<4),
 
+	VM_MMAP = (1<<5),
+
 	/* DO NOT EXCEED THIS VALUE. */
 	VM_MARKER_END = (1 << 31),
 	
@@ -65,7 +67,7 @@ struct page {
 	const struct page_operations *operations;
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
-
+	enum vm_type type;
 	/* custom */
 	const struct frame_operations *f_operations;
 
@@ -107,6 +109,7 @@ struct frame_operations{
 	void (*dealloc_frame) (struct frame *);
 };
 
+
 #define swap_in(page, v) (page)->operations->swap_in ((page), v)
 #define swap_out(page) (page)->operations->swap_out (page)
 #define destroy(page) \
@@ -123,12 +126,6 @@ struct frame_operations{
 struct supplemental_page_table {
 	struct hash page_hash;
 	struct lock lock;
-};
-struct load_args{
-    struct file* file;
-	size_t page_read_bytes;
-	size_t page_zero_bytes;
-    off_t ofs;
 };
 
 #include "threads/thread.h"
@@ -147,6 +144,7 @@ bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
 bool
 vm_spt_event(struct intr_frame* f,void* vaddr);
 
+
 #define vm_alloc_page(type, upage, writable) \
 	vm_alloc_page_with_initializer ((type), (upage), (writable), NULL, NULL)
 bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
@@ -155,6 +153,14 @@ void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
+
+
+struct load_args{
+    struct file* file;
+	size_t page_read_bytes;
+	size_t page_zero_bytes;
+    off_t ofs;
+};
 
 #endif  /* VM_VM_H */
 
