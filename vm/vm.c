@@ -9,6 +9,9 @@
 #include "userprog/process.h"
 #include <stdio.h>
 
+static struct frame_table frame_table;
+void frame_table_init();
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -21,6 +24,7 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	frame_table_init();
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -43,10 +47,17 @@ static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 bool is_stack_addr(void*, bool, struct thread *);
 
+bool frame_table_insert (struct frame *frame);
+void frame_table_remove(struct frame *frame);
+
 /* page hash functions */
 unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
 bool page_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
 void page_free (struct hash_elem *p_, void *aux UNUSED);
+
+unsigned frame_hash (const struct hash_elem *f_, void *aux UNUSED);
+bool frame_less(const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -117,16 +128,31 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 bool
 spt_insert_page (struct supplemental_page_table *spt,
 		struct page *page) {
-	int succ = false;
+	bool succ = false;
 	/* TODO: Fill this function. */
 	// 이 함수에서 주어진 보충 테이블에서 가상 주소가 존재하지 않는지 검사해야 합니다.
 	if (spt_find_page(spt, &page->va) == NULL) {		
 		lock_acquire(&spt->hash_lock);
 		hash_insert(&spt->pages, &page->hash_elem);
-		lock_release(&spt->hash_lock);		
+		lock_release(&spt->hash_lock);
 		succ = true;
 	}
 	return succ;
+}
+
+bool
+frame_table_insert (struct frame *frame) {
+	lock_acquire(&frame_table.hash_lock);
+	hash_insert(&frame_table.frames, &frame->hash_elem);
+	list_push_front(&thread_current()->child_frames, &frame->list_elem);
+	lock_release(&frame_table.hash_lock);
+	return true;
+}
+
+void frame_table_remove(struct frame *frame) {
+	lock_acquire(&frame_table.hash_lock);
+	hash_delete(&frame_table.frames, &frame->hash_elem);
+	lock_release(&frame_table.hash_lock);
 }
 
 void
@@ -151,6 +177,30 @@ vm_get_victim (void) {
 			예를 들면, 당신의 코드는 양쪽 주소 모두를 위한 accessed와 dirty 비트를 확인하고 업데이트 할 수 있어야 합니다. 
 			또는, 오직 유저 가상 주소를 통해서만 유저 데이터에 접근하게 함으로써 커널이 이 문제를 피하게 할 수 있습니다.
 	 */
+	/* Clock algorithm 사용 */
+	/*
+		- page 순회
+		- accessed 확인
+			if accessed == 0 -> gottcha!
+			if accessed == 1 -> set 0
+		- 끝까지 못찾으면 iter 한번 더
+	*/
+	while (victim == NULL) {
+		struct hash_iterator i;
+		hash_first(&i, &frame_table);
+		while (hash_next(&i)) {
+			struct frame *f = hash_entry(hash_cur(&i), struct frame, hash_elem);
+			void *upage = f->page->va;
+			uint64_t *pml4 = f->page->plm4;
+			ASSERT(!is_kernel_vaddr(f->page->va));
+			if (pml4_is_accessed(pml4, upage))
+				pml4_set_accessed(pml4, upage, false);
+			else {
+				victim = f;
+				break;
+			}
+		}
+	}
 	return victim;
 }
 
@@ -163,10 +213,12 @@ vm_get_victim (void) {
 */
 static struct frame *
 vm_evict_frame (void) {
-	struct frame *victim UNUSED = vm_get_victim ();
+	struct frame *victim = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
+	swap_out(victim->page);
+	victim->page = NULL;
 
-	return NULL;
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -181,18 +233,21 @@ vm_evict_frame (void) {
 static struct frame *
 vm_get_frame (void) {
 	void *kva = palloc_get_page(PAL_USER | PAL_ZERO);
-	if (kva == NULL) {
-		PANIC("-- swapping needed --");
-	}
-	struct frame *frame = calloc(1, sizeof(struct frame));
-	/* TODO: Fill this function. */
+	if (kva == NULL) 
+		return vm_evict_frame();
+	
+	struct frame *frame = malloc(sizeof(struct frame));
 	if (frame == NULL) {
 		PANIC("-- swapping needed --");
 	}
+
 	frame->kva = kva;
-	
+	frame->page = NULL;
+
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
+
+	frame_table_insert(frame);
 	return frame;
 }
 
@@ -327,6 +382,11 @@ void supplemental_page_table_init (struct supplemental_page_table *spt) {
 	lock_init(&spt->hash_lock);
 }
 
+void frame_table_init() {
+	hash_init(&frame_table, frame_hash, frame_less, NULL);
+	lock_init(&frame_table.hash_lock);
+}
+
 /* Copy supplemental page table from src to dst */
 /*
 	src부터 dst까지 supplemental page table를 복사하세요. 
@@ -377,9 +437,15 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	struct list_elem *e;
+	struct list *child_frames = &thread_current()->child_frames;
+	while (!list_empty(child_frames)) {
+		e = list_pop_front(child_frames);
+		struct frame *frame = list_entry(e, struct frame, list_elem);
+		frame_table_remove(frame);
+	}
 	if (!hash_empty(&spt->pages))
 		hash_clear(&spt->pages, page_free);
-
 	// writeback all the modified contents to the storage!! - mmap 시?
 }
 

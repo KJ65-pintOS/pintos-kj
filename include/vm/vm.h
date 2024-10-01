@@ -61,7 +61,6 @@ struct page { // vm_entry의 역할
 	struct hash_elem hash_elem;
 	bool writable;
 	uint64_t *plm4;
-	int fault_cnt;
 	// location in swqp area
 	// reference to the file object and offset(memory mapped file)
 
@@ -90,6 +89,7 @@ struct frame {
 	void *kva;
 	struct page *page;
 	struct hash_elem hash_elem;
+	struct list_elem list_elem;
 };
 
 /* The function table for page operations.
@@ -113,7 +113,6 @@ struct page_operations {
 struct frame_table {
 	struct hash frames;
 	struct lock hash_lock;
-	int usable_page_cnt;
 };
 
 #include "threads/thread.h"
