@@ -213,7 +213,7 @@ vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
         }
 		// 쓰기 권한 확인
         if (write && !page->writable) {
-            exit(-1);
+            return false;
         }
 
 
