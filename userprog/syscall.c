@@ -396,7 +396,7 @@ close_handler(struct intr_frame* f)
 		thread_exit_by_error(-1);
 	}
 	free_fd(get_fd_table(current),fd);
-	file_close(file);
+	file_close(file); 
 }
 
 static void
@@ -409,31 +409,44 @@ mmap_handler(struct intr_frame* f)
 	int fd = f->R.r10;
 	off_t offset = f->R.r8;
 
-	// fd로 file 가져오기
-	struct file *file = get_file_by_fd(fd);
-
-	// file의 길이가 null or 0byte이면 return
-	if(file == NULL || file_length(file) == 0) {
-		f->R.rax = NULL;
-		return;
-	}
-
-	// fd가 0, 1이면 return
+    // fd가 0, 1이면 return
 	if(fd == 0 || fd == 1) {
 		f->R.rax = NULL;
 		return;
 	}
-	// addr가 0이거나 NULL이면 return
-	if(addr == NULL) {
+
+	// offset 확인
+	if(offset != pg_round_down(offset)) {
 		f->R.rax = NULL;
 		return;
 	}
+
+	// fd로 file 가져오기
+	struct file *file = get_file_by_fd(fd);
+ 
+	// file의 길이가 null or 0byte이면 return
+	if(file == NULL || file_length(file) == 0) {
+		thread_exit_by_error(-1);
+	}
+
+	// addr가 0이거나 NULL이면 return
+	if(addr == NULL || addr != pg_round_down(addr)){
+		f->R.rax = NULL;
+		return;
+    }
 
 	//length가 0이면 return
 	if (length == 0) {
 		f->R.rax = NULL;
 		return;
 	}
+
+	// 페이지가 존재하는 경우 return
+	if (spt_find_page(&thread_current()->spt, addr)) {
+		f->R.rax = NULL;
+		return;
+	};
+    
 
 	return do_mmap(addr, length, writable, file, offset);
 };
