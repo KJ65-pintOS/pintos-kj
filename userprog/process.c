@@ -1000,7 +1000,6 @@ setup_stack (struct intr_frame *if_) {
             memset(stack_bottom, 0, PGSIZE);  // 스택 초기화
 		} 
 	}
-	
 	/**********************************************************************/
 	return success;
 }

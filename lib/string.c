@@ -378,5 +378,6 @@ void remove_extra_spaces(char *str) {
 }
 
 #endif 
+
 /* userprogram, project 2 */
 /********************************************/

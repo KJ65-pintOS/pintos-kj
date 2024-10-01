@@ -203,59 +203,57 @@ static struct frame *vm_get_frame(void) {
 }
 
 /* Growing the stack. */
-static void vm_stack_growth(void *addr UNUSED) {
-  // 하나 이상의 anonymous 페이지를 할당하여 스택 크기를 늘림 이로써 addr은 page
-  // fault에서 유효한 주소가 됩니다. 페이지를 할당할때 pgsize 기준으로
-  // 내림하세요
+static bool vm_stack_growth(void *addr UNUSED) {
+  // todo: 스택 크기를 증가시키기 위해 anon page를 하나 이상 할당하여 주어진
+  // 주소(addr)가 더 이상 예외 주소(faulted address)가 되지 않도록 합니다. todo:
+  // 할당할 때 addr을 PGSIZE로 내림하여 처리
+  return vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
 }
 
 /* Handle the fault on write_protected page */
 static bool vm_handle_wp(struct page *page UNUSED) {}
 
+#define STACK_MAX (1 << 20) // 1MB
+
 /* Return true on success */
-bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
-                         bool user UNUSED, bool write UNUSED,
-                         bool not_present UNUSED) {
-  struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+#include <stdio.h>
+
+bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user,
+                         bool write, bool not_present) {
+  struct supplemental_page_table *spt = &thread_current()->spt;
   struct page *page = NULL;
 
-  /* TODO: Validate the fault */
-  /* TODO: Your code goes here */
-
-  if (addr == NULL)
+  // 1. 기본 검증
+  if (user && is_kernel_vaddr(addr))
     return false;
 
-  if (is_kernel_vaddr(addr))
-    return false;
+  // 2. 페이지 찾기
+  page = spt_find_page(spt, addr);
 
-  if (not_present) // 접근한 메모리의 physical page가 존재하지 않은 경우
-  {
-    /* TODO: Validate the fault */
-    page = spt_find_page(spt, addr);
-    if (page == NULL)
-      return false;
-    if (write == 1 &&
-        page->writable == 0) // write 불가능한 페이지에 write 요청한 경우
-      return false;
-    return vm_do_claim_page(page);
+  // 3. 쓰기 권한 확인
+  if (write && page && page->writable == false) {
+    return false;
   }
-  return false;
 
-  // 스택 포인터 아래 8바이트에 대해서 PAGE FAULT를 발생시킬 수 있다.
-  // intr_frame rsp에서 얻을 수 잇다.
-  // 잘못된 메모리 접근을 감지하기 위해 PAGE FAULT에 의존하는 경우 커널에서 PAGE
-  // FAULT 가 발생하는 경우도 처리해야함 프로세스가 스택 포인터를 저장하는 것은
-  // 예외로 인해 유저 모드에서 커널 모드로 전환될 때 뿐이므로 page_fault()로
-  // 전달된 struct intr_frame 에서 rsp를 읽으면 유저 스택 포인터가 아닌 정의되지
-  // 않은 값을 얻을 수 있습니다. 유저 모드에서 커널 모드로 전환 시 rsp를 struct
-  // thread에 저장하는 것과 같은 다른 방법을 준비해야 합니다.
+  // 4. 페이지가 존재하지 않는 경우 처리
+  if (not_present) {
+    if (page)
+      return vm_do_claim_page(page);
 
-  // 스택 증가를 확인, 확인 후 vm_stack_growth를 호출하여 스택을 증가시켜야함
-  // page fault가 스택을 증가시켜야하는 경우에 해당하는지 아닌지를 확인해야함
-  // 스택 증가로 page fault 예외를 처리할 수 있는지 확인한 경우 page fualt가
-  // 발생한 주소로 vm_stack_growth를 호출해야함
+    // 5. 스택 성장 처리
+    void *rsp = user ? f->rsp : thread_current()->rsp;
 
-  // return vm_do_claim_page (page);
+    if (USER_STACK - STACK_MAX <= (uint8_t *)rsp - 8 &&
+        (uint8_t *)rsp - 8 <= (uint8_t *)addr &&
+        (uint8_t *)addr <= (uint8_t *)USER_STACK) {
+      return vm_stack_growth(addr);
+    }
+
+    return false;
+  }
+
+  // 6. 예상치 못한 상황
+  return true;
 }
 
 /* Free the page.
@@ -310,53 +308,55 @@ void supplemental_page_table_init(struct supplemental_page_table *spt UNUSED) {
 /* Copy supplemental page table from src to dst */
 bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED,
                                   struct supplemental_page_table *src UNUSED) {
-    // 해시 테이블을 순회하기 위한 이터레이터 선언
-    struct hash_iterator iterator;
-    
-    // 소스 SPT의 해시 테이블 순회 시작
-    // hash_first 함수로 이터레이터를 초기화하고 첫 번째 요소를 가리키도록 함
-    hash_first (&iterator, &src->hash_spt);
-    
-    // 해시 테이블의 모든 요소를 순회
-    while (hash_next (&iterator)) {
-        // 현재 해시 요소에서 페이지 구조체 추출
-        // hash_entry 매크로를 사용하여 현재 해시 요소를 struct page 포인터로 변환
-        struct page *parent_page = hash_entry(hash_cur(&iterator), struct page, hash_elem);
-        
-        // 부모 페이지의 타입, 쓰기 가능 여부, 가상 주소 추출
-        // operations 구조체를 통해 페이지 타입 접근
-        enum vm_type parent_page_type = parent_page->operations->type;
-        bool parent_page_writable = parent_page->writable;
-        void *parent_page_address = parent_page->va;
+  // 해시 테이블을 순회하기 위한 이터레이터 선언
+  struct hash_iterator iterator;
 
-        if (parent_page_type == VM_UNINIT) {
-            // 초기화 함수와 보조 데이터 추출
-            vm_initializer *init = parent_page->uninit.init;
-            void *aux = parent_page->uninit.aux;
+  // 소스 SPT의 해시 테이블 순회 시작
+  // hash_first 함수로 이터레이터를 초기화하고 첫 번째 요소를 가리키도록 함
+  hash_first(&iterator, &src->hash_spt);
 
-            // 수정: parent_page->uninit.type을 사용하여 원래 의도된 타입으로 페이지 할당
-            if (!vm_alloc_page_with_initializer(parent_page->uninit.type,
-                                                parent_page_address,
-                                                parent_page_writable,
-                                                init, aux))
-                return false;
-        } else {
-            // 이미 초기화된 페이지 처리
-            if (!vm_alloc_page(parent_page_type, parent_page_address, parent_page_writable))
-                return false;
-            // 물리 메모리 요청 및 페이지 테이블 매핑
-            if (!vm_claim_page(parent_page_address))
-                return false;
+  // 해시 테이블의 모든 요소를 순회
+  while (hash_next(&iterator)) {
+    // 현재 해시 요소에서 페이지 구조체 추출
+    // hash_entry 매크로를 사용하여 현재 해시 요소를 struct page 포인터로 변환
+    struct page *parent_page =
+        hash_entry(hash_cur(&iterator), struct page, hash_elem);
 
-            // 대상 SPT에서 새로 할당된 페이지 찾기
-            struct page *dst_page = spt_find_page(dst, parent_page_address);
-            // 페이지 내용 복사
-            memcpy(dst_page->frame->kva, parent_page->frame->kva, PGSIZE);
-        }
+    // 부모 페이지의 타입, 쓰기 가능 여부, 가상 주소 추출
+    // operations 구조체를 통해 페이지 타입 접근
+    enum vm_type parent_page_type = parent_page->operations->type;
+    bool parent_page_writable = parent_page->writable;
+    void *parent_page_address = parent_page->va;
+
+    if (parent_page_type == VM_UNINIT) {
+      // 초기화 함수와 보조 데이터 추출
+      vm_initializer *init = parent_page->uninit.init;
+      void *aux = parent_page->uninit.aux;
+
+      // 수정: parent_page->uninit.type을 사용하여 원래 의도된 타입으로 페이지
+      // 할당
+      if (!vm_alloc_page_with_initializer(parent_page->uninit.type,
+                                          parent_page_address,
+                                          parent_page_writable, init, aux))
+        return false;
+    } else {
+      // 이미 초기화된 페이지 처리
+      if (!vm_alloc_page(parent_page_type, parent_page_address,
+                         parent_page_writable))
+        return false;
+      // 물리 메모리 요청 및 페이지 테이블 매핑
+      if (!vm_claim_page(parent_page_address))
+        return false;
+
+      // 대상 SPT에서 새로 할당된 페이지 찾기
+      struct page *dst_page = spt_find_page(dst, parent_page_address);
+      // 페이지 내용 복사
+      memcpy(dst_page->frame->kva, parent_page->frame->kva, PGSIZE);
     }
-    
-    // 모든 페이지 복사가 성공적으로 완료됨
-    return true;
+  }
+
+  // 모든 페이지 복사가 성공적으로 완료됨
+  return true;
 }
 
 /* Free the resource hold by the supplemental page table */
