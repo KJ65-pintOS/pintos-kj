@@ -551,6 +551,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	list_init(&t->locks);
 	list_init(&t->mm_pages);
+	list_init(&t->child_frames);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
