@@ -55,18 +55,15 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 
-	/* Check wheter the upage is already occupied or not. */
+	/* Check whether the upage is already occupied or not. */
 	if (spt_find_page (spt, upage) == NULL) {
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
-
-		/* TODO: Insert the page into the spt. */
+		/* Create the page */
 		struct page *page = malloc(sizeof(struct page));
 		if (page == NULL)
 		{
 			goto err;
 		}
+		
 		vm_initializer *initializer = NULL;
 		switch (VM_TYPE(type))
 		{
@@ -79,11 +76,13 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		default:
 			goto err;
 		}
+
+		/* Initialize the page */
 		uninit_new(page, upage, init, type, aux, initializer);
 		page->writable = writable;
 
-		if (!spt_insert_page(spt, page))
-		{
+		/* Insert the page into the SPT */
+		if (!spt_insert_page(spt, page)) {
 			free(page);
 			goto err;
 		}
@@ -92,6 +91,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 err:
 	return false;
 }
+
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
@@ -232,6 +232,11 @@ vm_dealloc_page (struct page *page) {
 	free (page);
 }
 
+void
+vm_dealloc_frame(struct frame *frame) {
+	free(frame);
+}
+
 /* Claim the page that allocate on VA. */
 bool
 vm_claim_page (void *va UNUSED) {
@@ -302,6 +307,25 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 			vm_alloc_page_with_initializer(VM_ANON, upage, writable, init, copy_aux);
 			continue;
 		}
+		if (type == VM_FILE)
+		{
+			struct lazy_load_info *file_aux = malloc(sizeof(struct lazy_load_info));
+			file_aux->file = src_page->file.file;
+			file_aux->ofs = src_page->file.ofs;
+			file_aux->page_read_bytes = src_page->file.page_read_bytes;
+			file_aux->page_zero_bytes = src_page->file.page_zero_bytes;
+			if (!vm_alloc_page_with_initializer(type, upage, writable, NULL, file_aux))
+			{
+				return false;
+			}
+			struct page *file_page = spt_find_page(dst, upage);
+			file_backed_initializer(file_page, type, NULL);
+			file_page->frame = src_page->frame;
+			pml4_set_page(thread_current()->pml4, file_page->va, src_page->frame->kva, src_page->writable);
+			continue;
+			
+		}
+		
 		if (!vm_alloc_page(type, upage, writable))
 		{
 			return false;
