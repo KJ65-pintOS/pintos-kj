@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 static struct frame_table frame_table;
+static struct lock frame_lock;
 void frame_table_init();
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -25,6 +26,7 @@ vm_init (void) {
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
 	frame_table_init();
+	lock_init(&frame_lock);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -190,7 +192,7 @@ vm_get_victim (void) {
 		hash_first(&i, &frame_table);
 		while (hash_next(&i)) {
 			struct frame *f = hash_entry(hash_cur(&i), struct frame, hash_elem);
-			void *upage = f->page->va;
+			void *upage = f->page->va; // null인 경우엔 continue 해야.
 			uint64_t *pml4 = f->page->plm4;
 			ASSERT(!is_kernel_vaddr(f->page->va));
 			if (pml4_is_accessed(pml4, upage))
@@ -214,10 +216,8 @@ vm_get_victim (void) {
 static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim = vm_get_victim ();
-	/* TODO: swap out the victim and return the evicted frame. */
 	swap_out(victim->page);
 	victim->page = NULL;
-
 	return victim;
 }
 
@@ -233,13 +233,11 @@ vm_evict_frame (void) {
 static struct frame *
 vm_get_frame (void) {
 	void *kva = palloc_get_page(PAL_USER | PAL_ZERO);
+
 	if (kva == NULL) 
 		return vm_evict_frame();
 	
 	struct frame *frame = malloc(sizeof(struct frame));
-	if (frame == NULL) {
-		PANIC("-- swapping needed --");
-	}
 
 	frame->kva = kva;
 	frame->page = NULL;
@@ -356,8 +354,9 @@ vm_claim_page (void *va) {
  * 위의 함수는 앞에서 말한 연산이 성공적으로 수행되었을 경우에 true를 반환하고 그렇지 않을 경우에 false를 반환합니다. */
 static bool
 vm_do_claim_page (struct page *page) {
+	lock_acquire(&frame_lock);
 	struct frame *frame = vm_get_frame ();
-
+	lock_release(&frame_lock);
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
