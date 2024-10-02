@@ -70,8 +70,10 @@ static void
 tell_handler(struct intr_frame* f);
 static void
 close_handler(struct intr_frame* f);
-
-
+static void
+*mmap_handler(struct intr_frame *f);
+static void
+munmap_handler(struct intr_frame *f);
 #endif
 /* syscall, project 2 */
 /************************************************************************/
@@ -121,6 +123,8 @@ syscall_init (void) {
 	syscall_handlers[SYS_SEEK] = seek_handler;
 	syscall_handlers[SYS_TELL] = tell_handler;
 	syscall_handlers[SYS_CLOSE] = close_handler;
+	syscall_handlers[SYS_MMAP] = mmap_handler;
+	syscall_handlers[SYS_MUNMAP] = munmap_handler;
 
 #endif /* syscall, project 2 */
 }
@@ -478,3 +482,76 @@ put_user (uint8_t *udst, uint8_t byte) {
 #endif
 /* userprogram, project 2 */
 /******************************************************/
+
+static void* mmap_handler(struct intr_frame *f) {
+    void *addr = (void *)f->R.rdi;
+    size_t length = (size_t)f->R.rsi;
+    bool writable = (bool)f->R.rdx;
+    int fd = (int)f->R.r10;
+    off_t offset = (off_t)f->R.r8;
+
+    // 유효한 주소와 길이 확인
+    if (addr == NULL || length == 0) {
+		f->R.rax = NULL;
+        return;
+    }
+
+	// 주소가 페이지 경계에 맞는지 확인
+    if (pg_ofs(addr) != 0) {
+        f->R.rax = NULL;
+        return;
+    }
+
+    // offset이 페이지 단위로 맞춰져 있는지 확인
+    if (offset % PGSIZE != 0) {
+		f->R.rax = NULL;
+        return;
+    }
+
+	// 콘솔 입력 및 출력 확인
+	if (fd == 0 || fd == 1)
+	{
+		f->R.rax = NULL;
+        return;
+	}
+	
+
+    // 주소가 사용자 가상 주소 범위에 있는지 확인
+    if (!is_user_vaddr(addr) || !is_user_vaddr(addr + length)) {
+		f->R.rax = NULL;
+        return;
+    }
+
+    // 해당 주소에 이미 페이지가 존재하는지 확인
+    if (spt_find_page(&thread_current()->spt, addr)) {
+		f->R.rax = NULL;
+        return;
+    }
+
+	// 오버플로우 방지: addr + length가 오버플로우될 수 있으므로 확인
+    if ((uintptr_t)addr + length < (uintptr_t)addr) {
+        f->R.rax = NULL;
+        return;
+    }
+
+    // 파일 핸들러 확인
+    struct file *file = get_file_by_fd(fd);
+    if (file == NULL) {
+		f->R.rax = NULL;
+        return;
+    }
+
+    // 파일 길이 확인
+    if (file_length(file) == 0 || length == 0) {
+		f->R.rax = NULL;
+        return;
+    }
+
+    // mmap 호출
+    return do_mmap(addr, length, writable, file, offset);
+}
+
+static void munmap_handler(struct intr_frame *f){
+	void *addr = (void *)f->R.rdi;
+	do_munmap(addr);
+}
