@@ -37,6 +37,14 @@
 /* User stack start */
 #define USER_STACK 0x47480000
 
+/*********************************/
+// stack growth, project 3*/
+#define USER_STACK_MAX_SIZE (1<<20)
+#define STACK_HEURISTIC_MARGIN 8 //rsp 밑 8바이트까지 허용
+#define is_stack_access(rsp,addr) (is_user_vaddr(addr) && (addr >= rsp - sizeof(void*)) && (addr < USER_STACK))
+//스택 범위 내인지 확인 
+/*********************************/
+
 /* Returns true if VADDR is a user virtual address. */
 #define is_user_vaddr(vaddr) (!is_kernel_vaddr((vaddr)))
 

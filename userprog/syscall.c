@@ -27,6 +27,8 @@ void syscall_handler(struct intr_frame *);
 /************************************************************************/
 /* project 3  */
 #include "vm/vm.h"
+#include "threads/vaddr.h"
+#include "lib/user/syscall.h"
 /************************************************************************/
 
 typedef void
@@ -42,6 +44,11 @@ get_file_by_fd(int fd);
 
 static bool
 is_vaddr_valid(void *vaddr);
+/* project 3 */
+/****************************************************************/
+static bool
+is_writable_vaddr(void* vaddr);
+/****************************************************************/
 
 static void
 halt_handler(struct intr_frame *f);
@@ -71,6 +78,11 @@ static void
 tell_handler(struct intr_frame *f);
 static void
 close_handler(struct intr_frame *f);
+/* project 3 */
+/****************************************************************/
+static void
+mmap_handler(struct intr_frame *f);
+/****************************************************************/
 
 #endif
 /* syscall, project 2 */
@@ -120,6 +132,10 @@ void syscall_init(void)
 	syscall_handlers[SYS_SEEK] = seek_handler;
 	syscall_handlers[SYS_TELL] = tell_handler;
 	syscall_handlers[SYS_CLOSE] = close_handler;
+/* project 3 */
+/****************************************************************/
+	syscall_handlers[SYS_MMAP] = mmap_handler;
+/****************************************************************/
 
 #endif /* syscall, project 2 */
 }
@@ -256,6 +272,8 @@ read_handler(struct intr_frame *f)
 	{
 		thread_exit_by_error(-1);
 	}
+	if(!is_writable_vaddr(buffer))
+		thread_exit_by_error(-1);
 	struct thread *t = thread_current();
 	if ((file = get_file_by_fd(fd)) == NULL)
 	{
@@ -397,6 +415,79 @@ close_handler(struct intr_frame *f)
 	file_close(file);
 }
 
+//fd로 열린 파일의 오프셋(offset) 바이트부터 length 바이트 만큼을 프로세스의 가상주소공간의 주소 addr 에 매핑 합니다.
+
+//전체 파일은 addr에서 시작하는 연속 가상 페이지에 매핑됩니다. 파일 길이(length)가 PGSIZE의 배수가 아닌 경우 최종 매핑된 페이지의 일부 바이트가 파일 끝을 넘어 "stick out"됩니다. page_fault가 발생하면 이 바이트를 0으로 설정하고 페이지를 디스크에 다시 쓸 때 버립니다. 
+
+//성공하면 이 함수는 파일이 매핑된 가상 주소를 반환합니다. 실패하면 파일을 매핑하는 데 유효한 주소가 아닌 NULL을 반환해야 합니다.
+
+//fd로 열린 파일의 길이가 0바이트인 경우 mmap에 대한 호출이 실패할 수 있습니다. addr이 page-aligned되지 않았거나, 기존 매핑된 페이지 집합(실행가능 파일이 동작하는 동안 매핑된 스택 또는 페이지를 포함)과 겹치는 경우 실패해야 합니다.
+
+//Linux에서 addr이 NULL이면 커널은 매핑을 생성할 적절한 주소를 찾습니다. 단순화를 위해 주어진 addr에서 mmap을 시도할 수 있습니다. 
+//따라서 addr이 0이면 일부 Pintos 코드는 가상 페이지 0이 매핑되지 않는다고 가정하기 때문에 실패해야 합니다. length가 0일때도 mmap은 실패해야 합니다. 마지막으로 콘솔 입력 및 출력을 나타내는 파일 설명자는 매핑할 수 없습니다.
+//메모리 매핑된 페이지도 익명 페이지처럼 lazy load로 할당되어야 합니다. vm_alloc_page_with_initializer 또는 vm_alloc_page를 사용하여 페이지 개체를 만들 수 있습니다.
+
+static void
+mmap_handler(struct intr_frame *f) {
+	void *addr;
+	size_t length;
+	int writable;
+	int fd;
+	off_t offset;
+	struct file *file;
+
+	addr = f->R.rdi;
+	length = f->R.rsi;
+	writable = f->R.rdx;
+	fd = f->R.r10;
+	offset = f->R.r8;
+
+	//-----------------------------------------
+	//addr 관련 예외처리
+	//addr이 NULL이거나, 4바이트로 정렬되어 있지 않으면 실패
+	if (pg_ofs (addr) != 0 || addr == NULL) {
+		f->R.rax = NULL;
+    	return;
+	}
+	//z커널 영역에 매핑할 때
+	if (is_kernel_vaddr(addr)) {
+		f->R.rax = NULL;
+		return;
+	}
+		
+	//length 관련 예외처리
+	//length가 0일 때
+	if(length == 0) {
+		f->R.rax = NULL;
+		return;
+	}
+
+	//fd관련 예외처리
+	//fd값이 입출력 전용 file descriptor면 실패
+	if(fd==0 || fd==1)
+		f->R.rax = NULL;
+    	return;
+	//fd에해당하는 파일이 없거나, file길이가 0인 경우 실패
+	if ((file = get_file_by_fd(fd))==NULL||file_length(file)==0)
+		f->R.rax = NULL;
+    	return;
+
+	//offset관련 예외처리
+	//offset이 4의 배수가 아니거나, 파일크기를 초과할 때
+	if(pg_ofs (offset) != 0 || offset > file_length(file))
+		f->R.rax = NULL;
+		return;
+
+	//do_mmap에서, NULL 반환한 경우 실패
+	if(do_mmap(addr,length,writable,file,offset)==NULL)
+		goto error;
+	f->R.rax = do_mmap(addr,length,writable,file,offset);
+
+
+	error:
+		thread_exit_by_error(-1);
+}
+
 /***********************************************************/
 /* static functions */
 
@@ -420,6 +511,14 @@ is_vaddr_valid(void *vaddr)
 #else
 	return is_user_vaddr(vaddr) && spt_find_page(&thread_current()->spt, vaddr);
 #endif
+}
+
+static bool
+is_writable_vaddr(void* vaddr){
+	struct page* page = spt_find_page(&thread_current()->spt, vaddr);
+	if(page == NULL)
+		return false;
+	return page->writable;
 }
 
 /***********************************************************/

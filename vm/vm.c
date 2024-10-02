@@ -211,56 +211,149 @@ vm_get_frame (void) {
 	return frame;
 }
 
+// /* Growing the stack. */
+// static void
+// vm_stack_growth (void *addr UNUSED) {
+// 	// 하나 이상의 anonymous 페이지를 할당하여 스택 크기를 늘림 이로써 addr은 page fault에서 유효한 주소가 됩니다.
+// 	// 페이지를 할당할때 pgsize 기준으로 내림하세요
+// 	// 현재 rsp와 주소를 비교해서, stack_bottom
+// 	//stack bottom을 stack에 매핑함, 해당 페이지가 stack이라는 것을 mark하기
+
+// 	void *addr_round_down= pg_round_down(addr);
+// 	void *stack_bottom = thread_current()->stack_bottom;
+// 	bool success;
+// 	void *tmp = addr_round_down; //tmp(새로 page 할당할 주소)->초깃값:addr_round_down
+// 	while(addr_round_down < stack_bottom) {
+// 		vm_alloc_page(VM_ANON,tmp,1);//추가: addr_round_down을 tmp로 변경
+// 		//success = vm_claim_page(stack_bottom);
+// 		stack_bottom = addr_round_down;
+// 		tmp+=PGSIZE; //추가: tmp 갱신
+// 	}
+	
+// }
+
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
-	// 하나 이상의 anonymous 페이지를 할당하여 스택 크기를 늘림 이로써 addr은 page fault에서 유효한 주소가 됩니다.
-	// 페이지를 할당할때 pgsize 기준으로 내림하세요
+vm_stack_growth (void *addr) {
+	struct thread* t;
+	void* stack_bottom;
+	struct page *page;
+
+	addr = pg_round_down(addr);
+	ASSERT(addr > USER_STACK - USER_STACK_MAX_SIZE)
+
+	stack_bottom = thread_current()->stack_bottom;
+	void* tmp = addr;
+	while(tmp < stack_bottom){
+		vm_alloc_page(VM_ANON,tmp,true);
+		tmp+=PGSIZE;
+	}
+	thread_current()->stack_bottom = addr;
+
+	return;
 }
 
 /* Handle the fault on write_protected page */
 static bool
 vm_handle_wp (struct page *page UNUSED) {
+	return false;
 }
+
+// /* Return true on success */
+// bool
+// vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
+// 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
+
+// 	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+// 	struct page *page = NULL;
+
+// 	/* TODO: Validate the fault */
+// 	/* TODO: Your code goes here */
+// 	void *rsp = (void *)f->rsp;
+
+// 	if (addr == NULL)
+//         goto error;
+
+//     if (is_kernel_vaddr(addr))
+// 		goto error;
+// 	///////////////////////////////////////////////
+// 	page = spt_find_page(spt, addr);
+// 	if (page == NULL)
+// 		//스택에 접근하는 경우인데, 가상메모리가 아직 할당되어 있지 않은 경우
+// 		if (is_stack_access(rsp,addr)) {
+// 			vm_stack_growth(addr);
+// 			return true;
+// 		}
+// 		return false;
+// 	///////////////////////////////////////////////
+// 	if (write == true && page->writable == false) // write 불가능한 페이지에 write 요청한 경우
+//         return vm_handle_wp;
+
+//     if (not_present) // 접근한 메모리의 physical page가 존재하지 않은 경우
+//     {
+//         /* TODO: Validate the fault */
+//         if(vm_do_claim_page(page)) {
+// 			return true;
+// 		}
+//     }
+
+
+// 	error:
+// 		return false;
+   
+
+
+
+// 	// 스택 포인터 아래 8바이트에 대해서 PAGE FAULT를 발생시킬 수 있다.
+// 	// intr_frame rsp에서 얻을 수 있다.
+// 	// 잘못된 메모리 접근을 감지하기 위해 PAGE FAULT에 의존하는 경우 커널에서 PAGE FAULT 가 발생하는 경우도 처리해야함
+// 	// 프로세스가 스택 포인터를 저장하는 것은 예외로 인해 유저 모드에서 커널 모드로 전환될 때 뿐이므로 page_fault()로 전달된 struct intr_frame 에서 rsp를 읽으면 유저 스택 포인터가 아닌 정의되지 않은 값을 얻을 수 있습니다. 유저 모드에서 커널 모드로 전환 시 rsp를 struct thread에 저장하는 것과 같은 다른 방법을 준비해야 합니다.
+
+// 	// 스택 증가를 확인, 확인 후 vm_stack_growth를 호출하여 스택을 증가시켜야함
+// 	// page fault가 스택을 증가시켜야하는 경우에 해당하는지 아닌지를 확인해야함
+// 	// 스택 증가로 page fault 예외를 처리할 수 있는지 확인한 경우 page fualt가 발생한 주소로 vm_stack_growth를 호출해야함
+
+// }
 
 /* Return true on success */
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
-	struct page *page = NULL;
+
+	struct supplemental_page_table *spt;
+	struct page *page;
+	bool succ;
+	void* rsp;
 
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	succ = false;
+	spt = &thread_current()->spt;
+	/* page가 없는경우 */
+	if((page = spt_find_page(spt,addr)) == NULL){
+		/* user_stack 검증 */
+		rsp = (void*)f->rsp;
+		if(is_stack_access(rsp,addr)){
+			vm_stack_growth(addr);
+			return true;
+		}
+		return false;
+	}
+	/* write 불가한 페이지에 작성하려는 경우 */
+	if(write == true && page->writable == false){
+		if(vm_handle_wp(page)) {
+			succ = true;
+		}
+		
+	} 
+	/* lazy load */
+	if(not_present) {
+		if(vm_do_claim_page (page))
+		succ = true;
+	}
+	
 
-	if (addr == NULL)
-        return false;
-
-    if (is_kernel_vaddr(addr))
-        return false;
-
-    if (not_present) // 접근한 메모리의 physical page가 존재하지 않은 경우
-    {
-        /* TODO: Validate the fault */
-        page = spt_find_page(spt, addr);
-        if (page == NULL)
-            return false;
-        if (write == 1 && page->writable == 0) // write 불가능한 페이지에 write 요청한 경우
-            return false;
-        return vm_do_claim_page(page);
-    }
-    return false;
-
-	// 스택 포인터 아래 8바이트에 대해서 PAGE FAULT를 발생시킬 수 있다.
-	// intr_frame rsp에서 얻을 수 잇다.
-	// 잘못된 메모리 접근을 감지하기 위해 PAGE FAULT에 의존하는 경우 커널에서 PAGE FAULT 가 발생하는 경우도 처리해야함
-	// 프로세스가 스택 포인터를 저장하는 것은 예외로 인해 유저 모드에서 커널 모드로 전환될 때 뿐이므로 page_fault()로 전달된 struct intr_frame 에서 rsp를 읽으면 유저 스택 포인터가 아닌 정의되지 않은 값을 얻을 수 있습니다. 유저 모드에서 커널 모드로 전환 시 rsp를 struct thread에 저장하는 것과 같은 다른 방법을 준비해야 합니다.
-
-	// 스택 증가를 확인, 확인 후 vm_stack_growth를 호출하여 스택을 증가시켜야함
-	// page fault가 스택을 증가시켜야하는 경우에 해당하는지 아닌지를 확인해야함
-	// 스택 증가로 page fault 예외를 처리할 수 있는지 확인한 경우 page fualt가 발생한 주소로 vm_stack_growth를 호출해야함
-
-	// return vm_do_claim_page (page);
+	return succ;
 }
 
 /* Free the page.

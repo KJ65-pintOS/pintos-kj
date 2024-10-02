@@ -988,14 +988,14 @@ setup_stack (struct intr_frame *if_) {
 
 	/**********************************************************************/
 	/* project 3 */
-
+	struct thread *cur = thread_current();
 	//1. stack bottom을 stack에 매핑함, 해당 페이지가 stack이라는 것을 mark하기
 	if(vm_alloc_page(VM_ANON|VM_MARKER_0,stack_bottom,1)) {
 		success = vm_claim_page(stack_bottom);
 		if (success) {
 			if_->rsp = USER_STACK;
-
-		} 
+			cur->stack_bottom = stack_bottom;
+		}
 	}
 	
 	/**********************************************************************/
