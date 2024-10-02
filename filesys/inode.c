@@ -7,6 +7,10 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 
+
+/* custom */
+#include "threads/synch.h"
+
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
@@ -34,6 +38,9 @@ struct inode {
 	bool removed;                       /* True if deleted, false otherwise. */
 	int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
 	struct inode_disk data;             /* Inode content. */
+
+	/* custom*/
+	struct lock lock;
 };
 
 /* Returns the disk sector that contains byte offset POS within
@@ -126,6 +133,9 @@ inode_open (disk_sector_t sector) {
 	inode->deny_write_cnt = 0;
 	inode->removed = false;
 	disk_read (filesys_disk, inode->sector, &inode->data);
+
+	/* custom */
+	lock_init(&inode->lock);
 	return inode;
 }
 
@@ -155,6 +165,7 @@ inode_close (struct inode *inode) {
 	/* Release resources if this was the last opener. */
 	if (--inode->open_cnt == 0) {
 		/* Remove from inode list and release lock. */
+		//lock_acquire(&inode->lock);
 		list_remove (&inode->elem);
 
 		/* Deallocate blocks if removed. */
@@ -166,6 +177,7 @@ inode_close (struct inode *inode) {
 
 		free (inode); 
 	}
+
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
@@ -184,6 +196,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) {
 	uint8_t *buffer = buffer_;
 	off_t bytes_read = 0;
 	uint8_t *bounce = NULL;
+
+	/* custom */
+	lock_acquire(&inode->lock);
 
 	while (size > 0) {
 		/* Disk sector to read, starting byte offset within sector. */
@@ -222,6 +237,8 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset) {
 	}
 	free (bounce);
 
+	/* custom */
+	lock_release(&inode->lock);
 	return bytes_read;
 }
 
@@ -239,6 +256,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
 	if (inode->deny_write_cnt)
 		return 0;
+
+	/* custom */
+	lock_acquire(&inode->lock);
 
 	while (size > 0) {
 		/* Sector to write, starting byte offset within sector. */
@@ -283,6 +303,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 		bytes_written += chunk_size;
 	}
 	free (bounce);
+
+		/* custom */
+	lock_release(&inode->lock);
 
 	return bytes_written;
 }

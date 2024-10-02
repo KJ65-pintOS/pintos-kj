@@ -398,6 +398,8 @@ lock_checkup(struct thread* t, struct lock* l)
    ASSERT(intr_get_level() == INTR_OFF);
 
    holder = l->holder;
+   if(holder == NULL)
+      return;
    prt = thread_get_priority_any(t);
    if( prt >= l->max_prt ){ // lazy insert가 해결되면 ==로 교체해도 작동해야한다. 
       l->max_prt = prt;
