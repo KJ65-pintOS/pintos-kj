@@ -20,4 +20,6 @@ void *palloc_get_multiple (enum palloc_flags, size_t page_cnt);
 void palloc_free_page (void *);
 void palloc_free_multiple (void *, size_t page_cnt);
 
+struct pool* get_user_pool(void);
+uint8_t* get_user_base(void);
 #endif /* threads/palloc.h */

@@ -43,6 +43,13 @@ init_pool (struct pool *p, void **bm_base, uint64_t start, uint64_t end);
 
 static bool page_from_pool (const struct pool *, void *page);
 
+struct pool* get_user_pool(void){
+	return &user_pool;
+}
+uint8_t* get_user_base(void){
+	return &user_pool.base;
+}
+
 /* multiboot info */
 struct multiboot_info {
 	uint32_t flags;

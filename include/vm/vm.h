@@ -11,6 +11,7 @@
 #include <hash.h>
 #include "threads/synch.h"
 #include "threads/mmu.h"
+#include <bitmap.h>
 // #include "userprog/process.h"
 // #include "vm/uninit.h"
 // #include "vm/anon.h"
@@ -91,6 +92,16 @@ struct frame {
 	void *kva;
 	struct page *page;
 };
+struct frame_table{
+	unsigned pg_cnt;
+	uint8_t *base; 
+	struct frame* frame[5000];
+};
+
+#define pg_no_(va) ((uint64_t) (va) >> PGBITS)
+#define alloc_frame_table(kva, frame) ({frame_table.frame[pg_no_((uint8_t*)kva - frame_table.base)] = frame;})
+#define dealloc_frame_table(kva) ({frame_table.frame[pg_no_((uint8_t*)kva - frame_table.base)] = NULL;})
+
 
 /* The function table for page operations.
  * This is one way of implementing "interface" in C.
@@ -141,8 +152,6 @@ void spt_remove_page (struct supplemental_page_table *spt, struct page *page);
 void vm_init (void);
 bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,
 		bool write, bool not_present);
-bool
-vm_spt_event(struct intr_frame* f,void* vaddr);
 
 
 #define vm_alloc_page(type, upage, writable) \

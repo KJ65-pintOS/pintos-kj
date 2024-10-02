@@ -34,10 +34,6 @@ syscall_handler_func(struct intr_frame *);
 static syscall_handler_func 
 *syscall_handlers[25]; // 25는 총 syscall 갯수;
 
-#define get_fd_table(thread) (thread->fd_table)
-
-static struct file* 
-get_file_by_fd(int fd);
 
 static bool
 is_vaddr_valid(struct intr_frame* f,void* vaddr);
@@ -436,7 +432,7 @@ mmap_handler(struct intr_frame* f)
 
 	if(!is_mmap_vaddr_valid(f,addr)
 	|| length == 0 /* length 는 unsigned 이므로 음수 일 수 없음. */
-	|| !is_mmap_vaddr_valid(f,addr+length) 
+	|| !is_mmap_vaddr_valid(f,pg_round_down(addr+length))
 	|| offset != pg_round_down(offset)
 	||(file = get_file_by_fd(fd)) == NULL
 	|| fd == STDIN_FILENO 
@@ -444,9 +440,6 @@ mmap_handler(struct intr_frame* f)
 		f->R.rax = NULL;
 		return;
 	}
-
-
-
 
 	// size_t tmp = 0;
 	// while( tmp < length){
@@ -457,15 +450,10 @@ mmap_handler(struct intr_frame* f)
 	// 	tmp += PGSIZE;
 	// }
 
-	struct fd_table* fd_table = get_fd_table(thread_current());
 	file = file_duplicate(file);
-	if((fd = find_empty_fd(fd_table)) == -1 ){
-		file_close(file);
-		f->R.rax = -1;
-		return;
-	}
-	/* 이 file을 해제하는 건 누가해야하는가 아마 process 종료시에 ? */
-	set_fd(fd_table,fd,file);
+
+	// /* 이 file을 해제하는 건 누가해야하는가 아마 process 종료시에 ? */
+	
 	
 	/* if do_mmap failed , then it always return NULL */
 	f->R.rax = do_mmap(addr,length,writable,file,offset);
@@ -484,7 +472,7 @@ munmap_handler(struct intr_frame* f)
 /***********************************************************/
 /* static functions */
 
-static struct file* 
+struct file* 
 get_file_by_fd(int fd)
 {
 	struct fd_table *fd_table = get_fd_table(thread_current());

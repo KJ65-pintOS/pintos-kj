@@ -21,7 +21,12 @@ vm_dealloc_frame(struct frame *frame);
 
 static void 
 page_duplicate(struct hash_elem *e, void *aux);
+static void 
+hash_page_dealloc(struct hash_elem *e, void *aux);
 
+static void frame_table_init(void);
+
+static struct frame_table frame_table;
 
 /*************************************************/
 
@@ -37,6 +42,13 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+
+	frame_table_init();
+}
+static void 
+frame_table_init(void){
+	struct pool* user_pool = get_user_pool();
+	frame_table.base = get_user_base();
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -150,16 +162,18 @@ spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
 	ASSERT(spt != NULL);
 	ASSERT(page != NULL);
 
-	if(spt_find_page(spt, page->va)){
-		lock_acquire(&spt->lock);
-		if(hash_delete(&spt->page_hash,&page->hash_elem) == NULL){
-			/* hash_delete 실패한 경우 */
-		}
-		lock_release(&spt->lock);
-		
-		vm_dealloc_page (page);
+	/* 효율적인 아키텍처 구성을 위해서는 spt내에 page가 존재함이 보장된 후  이 함수를 호출해야함. */
+	ASSERT(spt_find_page(spt,page->va) != NULL);
+
+	lock_acquire(&spt->lock);
+	if(hash_delete(&spt->page_hash,&page->hash_elem) == NULL){
+		/* hash_delete 실패한 경우 */
 	}
+	lock_release(&spt->lock);
+	pml4_clear_page(thread_current()->pml4,page->va);
+	vm_dealloc_page(page);
 }
+
 
 /* Get the struct frame, that will be evicted. */
 static struct frame *
@@ -196,8 +210,9 @@ vm_get_frame (void) {
 	}
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
-
-	if((frame->kva = palloc_get_page(PAL_USER)) == NULL){
+	
+	
+	if((frame->kva= palloc_get_page(PAL_USER)) == NULL){
 		/* page 할당에 실패하는 경우 */
 		free(frame);
 		return NULL;
@@ -205,6 +220,8 @@ vm_get_frame (void) {
 	}
 	/* initialize member */
 
+	/* TODO: frame_table에 추가 */
+	alloc_frame_table(frame->kva,frame);
 	return frame;
 }
 
@@ -273,26 +290,6 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 
 	return succ;
 }
-bool
-vm_spt_event(struct intr_frame* f,void* vaddr){
-	struct page* page;
-	struct supplemental_page_table* spt;
-	spt = &thread_current()->spt;
-	void* rsp = (void*)f->rsp;
-
-	if((page = spt_find_page(spt,vaddr)) == NULL){
-		/* page가 없는경우 */
-		
-		/* user_stack 검증 */
-		rsp = (void*)f->rsp;
-		if(is_user_stack(rsp, vaddr)){
-			vm_stack_growth(vaddr);
-			return true;
-		}
-		return false;
-	}
-	return true;
-}
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
 void
@@ -350,8 +347,7 @@ vm_do_claim_page (struct page *page) {
 	return true;
 	
 err:
-	if(frame)
-		vm_dealloc_frame(frame);
+
 	return false;
 }
 
@@ -385,8 +381,15 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-	hash_clear(&spt->page_hash,NULL);
+	hash_clear(&spt->page_hash,hash_page_dealloc);
 }
+static void 
+hash_page_dealloc(struct hash_elem *e, void *aux){
+	struct page* page = hash_entry(e,struct page, hash_elem);
+	pml4_clear_page(thread_current()->pml4,page->va);
+	vm_dealloc_page(page);
+}
+
 
 /***********************************************************************/
 /* hash func */
@@ -436,12 +439,18 @@ err:
 }
 
 
+
+
 static void
 vm_dealloc_frame(struct frame *frame){
 	ASSERT(frame != NULL);
+	uint8_t* kva = frame->kva;
 	if(frame->kva)
 		free(frame->kva);
 	free(frame);
+
+
+	dealloc_frame_table(kva);
 }
 
 /***********************************************************************/

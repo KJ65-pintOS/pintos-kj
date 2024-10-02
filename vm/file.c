@@ -52,26 +52,45 @@ file_backed_swap_out (struct page *page) {
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page;
+	struct file_args* args;
+	struct pml4* pml4;
+
+	file_page = &page->file;
+	args = &file_page->args;
+	pml4 = thread_current()->pml4;
+
+	if(pml4_is_dirty(pml4,page->va))
+		file_write_at(args->file, page->frame->kva, args->page_read_bytes, args->ofs);
 }
+
 
 /* Do the mmap */
 void *
 do_mmap (void *addr, size_t length, int writable,
-		struct file *file, off_t offset) {
+		struct file* file, off_t offset) {
 	
+	// struct file *file = get_file_by_fd(fd);
+
 	void* tmp_addr =  addr;
 	off_t file_len = file_length(file);
 	if(file_len == 0)
 		return NULL;
-	uint32_t read_bytes = file_len < length? file_len : length;
-	uint32_t zero_bytes = length - read_bytes;
+
+	uint32_t size = file_len < length? file_len : length;
+	uint32_t size_align = pg_round_up(size);
+
+	/* length 가 page align 안 될 수 있음. 조정 필요.*/
+	uint32_t read_bytes = size; 
+	uint32_t zero_bytes = size_align - size;
+
+
 
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (addr) == 0);
 
 	/* vm, project 3 */
-	struct load_args* args;
+	struct file_args* args;
 	void *aux;
 
 	while (read_bytes > 0 || zero_bytes > 0) {
@@ -85,8 +104,9 @@ do_mmap (void *addr, size_t length, int writable,
 		/* vm, project 3 */
 		
 		aux = NULL;
-		args = (struct load_args*)malloc(sizeof(struct load_args));
+		args = (struct file_args*)malloc(sizeof(struct file_args));
 		args->file = file;
+		// args->fd = fd;
 		args->page_read_bytes = page_read_bytes;
 		args->page_zero_bytes = page_zero_bytes;
 		args->ofs = offset;
@@ -109,39 +129,29 @@ do_mmap (void *addr, size_t length, int writable,
 void
 do_munmap (void *addr) {
 	struct supplemental_page_table* spt;
+	struct hash* hash;
 
 	spt = &thread_current()->spt;
-	struct hash* hash = &spt->page_hash;
-	hash_clear(spt,hash_mummap);
+	hash = &spt->page_hash;
+
+	hash->aux = addr;
+	hash_apply(spt,hash_mummap);
+	return;
 }
 
 static void hash_mummap(struct hash_elem *e, void *aux){
 	struct page* page;
-	struct file_page* file_page;
-	struct pml4* pml4;
 	enum vm_type type;
-	struct file_args* args;
+	void* vaddr;
 
+	/* 지금은 모든 mmap을 mummap한번에 모두 해제하고있음, mmap을 구별해주는 로직이 필요 vaddr기준. */
+	vaddr = aux;
 	page = hash_entry(e,struct page, hash_elem);
 	type = page->type;
-	if(VM_MARKER(type) != VM_MMAP)
-		return;
-	
-	file_page = &page->file;
-	args = &file_page->args;
-	pml4 = thread_current()->pml4;
-	if(VM_TYPE(type) == VM_UNINIT){
-		
-	}
-	else if(VM_TYPE(type) == VM_FILE){
-		
-		if(pml4_is_dirty(pml4,page))
-			file_write_at(args->file, page->frame->kva, args->page_read_bytes, args->ofs);
-	}
-	spt_remove_page(&thread_current()->spt,page);
-	pml4_clear_page(pml4,page->va);
-	/* page를 지워야할 필요가있음.*/
+	if(VM_MARKER(type) == VM_MMAP)
+		spt_remove_page(&thread_current()->spt,page);
 }
+
 
 
 static bool
@@ -154,11 +164,12 @@ file_backed_duplicate(struct page* dst, const struct page* src){
 }
 
 
+
 static bool 
 mmap_lazy_load_segment(struct page* page, void* aux){
 
 	struct file_page *file_page= &page->file;
-	struct load_args* args;
+	struct file_args* args;
 	struct file* file;
 	struct frame* f;
 	void * kva = page->frame->kva;
@@ -171,18 +182,19 @@ mmap_lazy_load_segment(struct page* page, void* aux){
 		return false;
 
 	args = (struct file_args*)aux;
+
 	file = args->file;
+
 	page_read_bytes = args->page_read_bytes;
 	page_zero_bytes = args->page_zero_bytes;
 	ofs = args->ofs;
-	//struct thread* t = thread_current();
+
 	memcpy(&file_page->args,args,sizeof(struct file_args));
 	free(aux);
 
 	file_seek(file,ofs);
 	int test = file_read (file, kva, page_read_bytes);
 	if ( test != (int) page_read_bytes) {
-		//palloc_free_page (kva);
 		return false;
 	}
 	memset (kva + page_read_bytes, 0, page_zero_bytes);

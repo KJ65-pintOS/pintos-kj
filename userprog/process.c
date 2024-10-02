@@ -373,7 +373,6 @@ process_wait (tid_t child_tid UNUSED) {
 	exit_code = process->exit_code; 
 	list_remove(&process->elem);
 	free((void*)process);
-
 	return exit_code;
 }
 static bool

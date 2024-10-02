@@ -34,7 +34,8 @@ anon_initializer (struct page *page, enum vm_type type, void *kva) {
 	/* Set up the handler */
 	page->operations = &anon_ops;
 	page->type = type;
-	memset(kva,0,PGSIZE);
+	if(VM_MARKER(type) == VM_STACK)
+		memset(kva,0,PGSIZE);
 	struct anon_page *anon_page = &page->anon;
 	return true;
 }
@@ -57,8 +58,7 @@ anon_swap_out (struct page *page) {
 static void
 anon_destroy (struct page *page) {
 	struct anon_page *anon_page = &page->anon;
-	if(page->frame)
-		dealloc_frame(page);	
+
 }
 
 static bool
