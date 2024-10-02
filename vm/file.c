@@ -14,7 +14,7 @@ static void file_backed_destroy (struct page *page);
 bool lazy_load_file(struct page *page, void *aux);
 void free_resources(struct file_page *fpage);
 void write_back(struct file *mm_file, struct file_page *fpage);
-
+void read_file_to(struct load_args *load_args, void *kpage);
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
 	.swap_in = file_backed_swap_in,
@@ -23,7 +23,7 @@ static const struct page_operations file_ops = {
 	.type = VM_FILE,
 };
 
-struct lock file_lock;
+static struct lock file_lock;
 
 /* The initializer of file vm 
 	파일 지원 페이지 하위 시스템을 초기화합니다. 이 기능에서는 file_backed_page와 관련된 모든 것을 설정할 수 있습니다.
@@ -52,14 +52,27 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 /* Swap in the page by read contents from the file. */
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
+
+	read_file_to(file_page->load_args, kva);
+
+	return true;
 }
 
 /* Swap out the page by writeback contents to the file. */
 static bool
 file_backed_swap_out (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
-	// any change in the content is reflected in the file
+	struct file_page *file_page = &page->file;
+	
+	pml4_clear_page(page->plm4, page->va);
+	if (!pml4_is_dirty(page->plm4, page->va))
+		return true;
+	
+	write_back(file_page->load_args->file, file_page);
+	page->frame = NULL;
+	pml4_set_dirty(page->plm4, page->va, false);
+	
+	return true;
 }
 
 /* Destory the file backed page. PAGE will be freed by the caller. 
@@ -131,7 +144,7 @@ bool lazy_load_file(struct page *page, void *aux) {
 	uint8_t *kpage = (uint8_t *)page->frame->kva;
 
 	page->file.load_args = load_args;
-
+	
 	file_seek(load_args->file, load_args->ofs);
 
 	size_t page_read_bytes = load_args->page_read_bytes;
@@ -152,19 +165,6 @@ bool lazy_load_file(struct page *page, void *aux) {
 void
 do_munmap (void *addr) {
 	// any change in the content is reflected in the file
-	/*
-		- file_page의 mm_pages를 순회한다.
-		- if dirty bit이 set 되어 있으면 file_write를 한다
-			- dirty bit check은 첫 addr만 확인하면 된다
-			- file에 대한 정보도 첫 addr만 있으면 된다
-			- page_read_bytes & offset은 file_page 별로 있어야 함
-			- 위 정보들은 lazy_load_file에서 넣어준다
-		- 아니면 똑같이 memcpy을 해주면 안되나?.
-		- frame & page를 free 한다
-		pml4에서도 삭제한다
-		file을 close한다
-		로직을 구체적으로 짜야겠다... 계속 수정이 일어나네
-	*/
 	struct page *start_file_page = spt_find_page(&thread_current()->spt, addr);
 	if (start_file_page == NULL)
 		return;
@@ -216,5 +216,18 @@ void write_back(struct file *mm_file, struct file_page *fpage) {
 		thread_kill();
 	}
     lock_release(&file_lock);
+}
+
+void read_file_to(struct load_args *load_args, void *kpage) {
+	lock_acquire(&file_lock);
+	file_seek(load_args->file, load_args->ofs);
+	size_t page_read_bytes = load_args->page_read_bytes;
+	if (file_read(load_args->file, kpage, page_read_bytes) != (int)page_read_bytes) {
+		palloc_free_page(kpage);
+		free(load_args);
+		return false;
+	}
+	lock_release(&file_lock);
+	memset(kpage + page_read_bytes, 0, load_args->page_zero_bytes);
 }
 
