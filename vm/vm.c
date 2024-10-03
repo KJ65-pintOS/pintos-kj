@@ -439,8 +439,6 @@ err:
 }
 
 
-
-
 static void
 vm_dealloc_frame(struct frame *frame){
 	ASSERT(frame != NULL);
